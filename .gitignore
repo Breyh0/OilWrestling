@@ -1,0 +1,11 @@
+# Roblox Studio
+*.rbxl.lock
+*.rbxlx.lock
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Node (si entra tooling más adelante)
+node_modules/
