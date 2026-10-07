@@ -103,8 +103,13 @@ function Logic.Reconcile(data)
 		data.stats = deepCopy(def.stats)
 	end
 	for k, v in pairs(def.stats) do
-		if type(data.stats[k]) ~= "number" then
+		-- Misma regla que xp/coins: un contador corrupto nunca queda negativo ni decimal.
+		-- Un valor que no es numero vuelve al valor por defecto.
+		local n = data.stats[k]
+		if type(n) ~= "number" then
 			data.stats[k] = v
+		else
+			data.stats[k] = math.max(0, math.floor(n))
 		end
 	end
 

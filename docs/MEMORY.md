@@ -1,6 +1,6 @@
 # Memoria del proyecto — Lucha de aceite
 
-> Última actualización: 2026-10-07 (tarde: suelo aceitoso + resbalón + salpicaduras + fix de GUI con `WaitForChild` con timeout; antes: reparación de daño de la IA del compañero + `OilWinnerCeremony` extraído). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
+> Última actualización: 2026-10-07 (noche: 2 skills del repo (`lucha-workflow`, `lucha-qa`) + 46 tests de `ProgressionLogic` + `Reconcile` clampea `stats` como xp/coins; antes: suelo aceitoso + resbalón + salpicaduras + fix de GUI con `WaitForChild` con timeout). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
 
 ## Overview
 
@@ -113,6 +113,24 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - **Fix GUI (crítico)**: sin timeouts de `WaitForChild` en LoadingScreenClient/FighterGuiClient/GameHUDClient/MainMenuClient (ver Gotchas).
 - **Verificado en playtest 2026-10-07**: 0 errores de juego; `OilSlick` ciclando (1.117); gotas vistas **153** en pelea real / **121** splash directo / **117** tras knock simulado; onda = **8–9 muestras** a 0.05s (exactamente 1 vida útil ✓); knock → `PlatformStand=true` → splash ✓; gate de lobby ✓; suelo ámbar con borde dorado y sheen en vivo ✓.
 
+## Skills y tests del repo (2026-10-07, noche)
+
+Las IAs de los dos compañeros cargan estas skills automáticamente desde el repo (`git pull` para tenerlas):
+
+- **`.opencode/skills/lucha-workflow/SKILL.md`** (`lucha-workflow`) — reglas duras del equipo: código solo en `src/`, escena/GUI solo en Studio, flujo `git pull` → Rojo → push, verificación place↔src por hashes FNV, tabla de síntomas ya diagnosticados. **Es la versión corta y operativa de esta memoria**: si algo contradice a este archivo, manda este.
+- **`.opencode/skills/lucha-qa/SKILL.md`** (`lucha-qa`) — capa de verificación: playtest → captura → consola (0 errores), cuándo usar cada skill del MCP de Roblox, medir posiciones reales en vez de suponer, probar UI en móvil y revertir el simulador de dispositivos al terminar.
+
+**Tests unitarios** (`src/server/UnitTest/`, sincronizado por Rojo a `ServerScriptService.UnitTest`):
+
+- `RunUnitTest.luau` — arnés propio (sin TestEZ ni Wally). Descubre `Cases/`, ejecuta cada caso aislado con timeout y resume por consola.
+- `Cases/ProgressionLogic_Test.luau` — **46 casos en verde**: `Reconcile` (saneo + migración v1/v2→v3), `EnsureToday`, `AddCoins`, `AddXP`, `ApplyEvent` (misiones y bonos), `ApplyMatch` (balance, abandono, racha, multiplicador IA), `Snapshot`. Deterministas: el reloj se inyecta con una marca fija, nunca `os.time`.
+- Ejecutar: `require(ServerScriptService.UnitTest.RunUnitTest)("ProgressionLogic")` con `execute_luau` en `Server` durante un playtest; resultados en la consola (`[PASS]`/`[FAIL]`/`[SUMMARY]`). Parcial: solo `ProgressionLogic` — `OilCombat` y `OilPhysics` siguen sin cubrir (dependen del juego).
+- Regla: si un test falla porque el módulo contradice su contrato, **el test se queda rojo y se reporta**; nunca se relaja la expectativa para poner la suite en verde.
+
+**Arreglo 2026-10-07**: `Reconcile` ya clampea `stats` igual que `xp`/`coins` (`math.max(0, math.floor(n))`); antes solo sustituía valores no numéricos, así que un save corrupto con `wins = -5` conservaba el negativo y llegaba a los leaderstats.
+
+**Grafo de conocimiento** (graphify, `graphify-out/` va en `.gitignore`): 318 nodos / 621 aristas / 38 comunidades. Preguntas de arquitectura ("qué llama a OilCombat.perform", "qué toca el suelo aceitoso") → responder con `graphify query "..."` en vez de releer 1400 líneas. `OILCOMBAT.md` es el puente documental→código (3 de sus 6 aristas cruzan de comunidad).
+
 ## TODO / Known issues
 
 
@@ -123,4 +141,4 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - [ ] IA estática (sin comportamiento real).
 - [ ] Mover `ProgressionClient` (StarterGui) a `src/client` con refactor de lookup a `PlayerGui`.
 - [ ] Invitar a supergamertth8 al repo (Settings → Collaborators) y que ejecute SETUP.md.
-- [ ] Tests automatizados. ~~Blindaje de seguridad de remotes~~ HECHO 2026-10-06 (ver sección Blindaje). ~~Extracción~~ HECHA: 17 scripts, verificación 1:1 por SHA-256.
+- [ ] Tests automatizados → **parcial 2026-10-07**: `ProgressionLogic` cubierto con 46 casos (`src/server/UnitTest/`). Pendiente: `OilCombat` y `OilPhysics` (dependen del juego → necesitan stubs). ~~Blindaje de seguridad de remotes~~ HECHO 2026-10-06 (ver sección Blindaje). ~~Extracción~~ HECHA: 17 scripts, verificación 1:1 por SHA-256.

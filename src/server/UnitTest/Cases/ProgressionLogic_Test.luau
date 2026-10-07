@@ -82,6 +82,27 @@ return function(t)
 		expect.equal(Logic.Reconcile({ coins = 3e9 }).coins, C.MaxCoins)
 	end)
 
+	-- Las stats siguen la misma regla que xp/coins: jamas negativo.
+	t.test("Reconcile: pone en cero los contadores de stats negativos", function()
+		local d = Logic.Reconcile({ stats = { wins = -5, streak = -1, bestStreak = -3 } })
+		expect.equal(d.stats.wins, 0)
+		expect.equal(d.stats.streak, 0)
+		expect.equal(d.stats.bestStreak, 0)
+	end)
+
+	-- Los contadores de stats son enteros, como xp/coins.
+	t.test("Reconcile: trunca a entero los contadores de stats decimales", function()
+		local d = Logic.Reconcile({ stats = { matches = 2.7, ringouts = 9.9 } })
+		expect.equal(d.stats.matches, 2)
+		expect.equal(d.stats.ringouts, 9)
+	end)
+
+	-- Un stat corrupto que no es numero vuelve al valor por defecto.
+	t.test("Reconcile: un stat corrupto vuelve al valor por defecto", function()
+		local d = Logic.Reconcile({ stats = { wins = true } })
+		expect.equal(d.stats.wins, 0)
+	end)
+
 	-- Migra los contadores m_* de los datos v1/v2 a los ids de mision actuales.
 	t.test("Reconcile: migra los contadores antiguos a las misiones", function()
 		local d = Logic.Reconcile({ schema = 2, m_wins = 7, m_ringouts = 12, m_parrys = 3 })
