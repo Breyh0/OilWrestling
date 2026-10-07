@@ -84,7 +84,8 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 ## TODO / Known issues
 
 - [x] ~~`OilAction` sin rate-limit ni validación de `aim`~~ → **blindado 2026-10-06** (ver sección Blindaje).
-- [ ] `OilCombat.doCharge`: busy-wait con `task.wait(0.03)` → migrar a Heartbeat.
+- [ ] **Bug alta**: si `runMatch` lanza un error interno, `match` queda ≠ `nil` para siempre → servidor deja de iniciar partidas (docs/OILCOMBAT.md, bug #1). Ver también #4 (`releaseFighter` sin `dropHolds`) y #6 (carrera con token `session` en MatchLoop).
+- [ ] `OilCombat.doCharge`: busy-wait con `task.wait(0.03)` → migrar a Heartbeat (docs/OILCOMBAT.md, bug #2).
 - [ ] Lógica de Tienda y Códigos (UI construida y cableada, `redeem()`/compras = placeholders).
 - [ ] IA estática (sin comportamiento real).
 - [ ] Mover `ProgressionClient` (StarterGui) a `src/client` con refactor de lookup a `PlayerGui`.
