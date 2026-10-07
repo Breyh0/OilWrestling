@@ -9,3 +9,6 @@ desktop.ini
 
 # Node (si entra tooling más adelante)
 node_modules/
+
+# Grafo de conocimiento (graphify) - artefacto local, se regenera con /graphify --update
+graphify-out/
