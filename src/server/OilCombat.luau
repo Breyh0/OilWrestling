@@ -689,6 +689,62 @@ local function targetsInCone(e, dir, range, minDot)
 	return list
 end
 
+-- ===== Embestidas en curso =====
+-- Las embestidas se resuelven en el Heartbeat del modulo (una comprobacion por frame) en vez de
+-- con un bucle propio de task.wait: asi el impacto se evalua una vez por frame y sin despertares
+-- extra por embestida (bug #2 de docs/OILCOMBAT.md).
+local activeCharges = {} -- { {char, entry, dir, def, tCheck, tEnd, result} }
+
+-- Termina la embestida: limpia el atributo Charging y aplica rebote o recuperacion.
+local function finishCharge(c)
+	c.char:SetAttribute("Charging", nil)
+	if isAlive(c.entry) and not c.entry.out then
+		if c.result == "hit" then
+			sendKnock(c.entry, -c.dir * 8, 0, 0, 0.5) -- rebote del impacto
+		elseif c.result then
+			sendKnock(c.entry, -c.dir * 16, 0, 0, 0.6) -- rebota contra la guardia
+		else
+			sendKnock(c.entry, Vector3.zero, 0, 0, c.def.Recovery) -- fallo: queda expuesto
+		end
+	end
+end
+
+-- Un paso por frame de todas las embestidas activas.
+local function tickCharges()
+	if #activeCharges == 0 then
+		return
+	end
+	local keep = {}
+	local now = os.clock()
+	for _, c in ipairs(activeCharges) do
+		local done = false
+		if now >= c.tEnd or not match or not match.fighting or c.entry.released
+			or not isAlive(c.entry) or c.entry.out then
+			-- Se acabo el tiempo o el combate: la embestida termina sin resultado.
+			done = true
+		elseif now >= c.tCheck then
+			-- Primer chequeo a los 30ms, igual que el antiguo bucle (no cambia el balance).
+			for _, t in ipairs(targetsInCone(c.entry, c.dir, c.def.HitRange, -0.1)) do
+				local r = resolveHit(c.entry, t.entry, c.dir, {
+					force = c.def.Force, stun = c.def.Stun, lift = c.def.Lift, stagger = 0,
+					balanceDmg = CFG.Balance.Damage.charge, fx = "throw", blockCostMult = 2,
+				})
+				if connected(r) then
+					c.result = r
+					done = true
+					break
+				end
+			end
+		end
+		if done then
+			finishCharge(c)
+		else
+			keep[#keep + 1] = c
+		end
+	end
+	activeCharges = keep
+end
+
 local function canKeepActing(e)
 	local t = os.clock()
 	return match and match.fighting and isAlive(e) and not e.out and t >= e.stunUntil and t >= e.dazedUntil
@@ -728,36 +784,12 @@ local function doCharge(e, dir)
 	setAct(char, "charge")
 	char:SetAttribute("Charging", true)
 	sendKnock(e, dir * def.Impulse, 0, 0, 0)
-	task.spawn(function()
-		local tEnd = os.clock() + def.Duration
-		local result = nil
-		while os.clock() < tEnd and match and match.fighting and isAlive(e) and not e.out do
-			task.wait(0.03)
-			for _, t in ipairs(targetsInCone(e, dir, def.HitRange, -0.1)) do
-				local r = resolveHit(e, t.entry, dir, {
-					force = def.Force, stun = def.Stun, lift = def.Lift, stagger = 0,
-					balanceDmg = CFG.Balance.Damage.charge, fx = "throw", blockCostMult = 2,
-				})
-				if connected(r) then
-					result = r
-					break
-				end
-			end
-			if result then
-				break
-			end
-		end
-		char:SetAttribute("Charging", nil)
-		if isAlive(e) and not e.out then
-			if result == "hit" then
-				sendKnock(e, -dir * 8, 0, 0, 0.5) -- rebote del impacto
-			elseif result then
-				sendKnock(e, -dir * 16, 0, 0, 0.6) -- rebota contra la guardia
-			else
-				sendKnock(e, Vector3.zero, 0, 0, def.Recovery) -- falló: queda expuesto
-			end
-		end
-	end)
+	-- El resto de la embestida lo lleva tickCharges() desde el Heartbeat del modulo.
+	local t0 = os.clock()
+	activeCharges[#activeCharges + 1] = {
+		char = char, entry = e, dir = dir, def = def,
+		tCheck = t0 + 0.03, tEnd = t0 + def.Duration, result = nil,
+	}
 end
 
 local function doGrab(e, dir)
@@ -1024,6 +1056,8 @@ local acc = 0
 RunService.Heartbeat:Connect(function(dt)
 	-- El servidor es dueño de la física del gladiador IA
 	OilPhysics.step(dt)
+	-- Embestidas en curso: una comprobación de impacto por frame
+	tickCharges()
 	acc += dt
 	if acc >= 0.1 then
 		local d = acc
@@ -1288,7 +1322,10 @@ end
 
 -- Bloquea hasta que alguien llega a PointsToWin (o solo queda uno porque los demás renunciaron).
 -- defs: { {kind="player", player=...}, {kind="ai", model=..., name=...} }
-function OilCombat.runMatch(defs)
+--
+-- Este cuerpo puede lanzar errores; quien lo envuelve es OilCombat.runMatch, que garantiza
+-- la limpieza del estado global pase lo que pase (bug #1 de docs/OILCOMBAT.md).
+local function runMatchBody(defs)
 	if match then
 		return nil
 	end
@@ -1424,6 +1461,37 @@ function OilCombat.runMatch(defs)
 	end
 	match = nil
 	return winner and { name = winner.name, player = winner.player, reason = reason } or nil
+end
+
+-- Limpieza de emergencia: deja el estado global como si el combate hubiera terminado bien.
+-- Es idempotente (releaseFighter ya es idempotente) y segura si runMatchBody falló a mitad:
+-- sin esto, match quedaba ~= nil para siempre y el servidor no podia iniciar otro combate.
+local function forceCleanup()
+	local m = match
+	if not m then
+		return
+	end
+	match = nil
+	m.active = false
+	m.fighting = false
+	workspace:SetAttribute("OilMatchActive", nil)
+	workspace:SetAttribute("OilSlick", nil)
+	for _, e in ipairs(m.fighters or {}) do
+		pcall(releaseFighter, e)
+	end
+end
+
+-- Punto de entrada público. Envuelve el cuerpo del combate en pcall + limpieza para que un
+-- error interno no deje el servidor colgado (bug #1 de docs/OILCOMBAT.md).
+function OilCombat.runMatch(defs)
+	local ok, res = pcall(runMatchBody, defs)
+	if not ok then
+		-- res es el mensaje de error, no un resultado: se descarta y se devuelve nil.
+		warn("[OilCombat] runMatch falló, limpiando estado:", res)
+		pcall(forceCleanup)
+		return nil
+	end
+	return res
 end
 
 -- RENUNCIAR: el jugador abandona la pelea. Sale del combate y el rival gana (si solo quedaba uno).

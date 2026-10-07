@@ -1,6 +1,6 @@
 # Memoria del proyecto — Lucha de aceite
 
-> Última actualización: 2026-10-07 (noche: 2 skills del repo (`lucha-workflow`, `lucha-qa`) + 46 tests de `ProgressionLogic` + `Reconcile` clampea `stats` como xp/coins; antes: suelo aceitoso + resbalón + salpicaduras + fix de GUI con `WaitForChild` con timeout). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
+> Última actualización: 2026-10-07 (noche: bugs #1 y #2 de `docs/OILCOMBAT.md` arreglados — `runMatch` con `pcall`+`forceCleanup` y `doCharge` sin busy-wait, ambos verificados en playtest; 2 skills del repo + 46 tests de `ProgressionLogic` + `Reconcile` clampea `stats` como xp/coins; antes: suelo aceitoso + resbalón + salpicaduras + fix de GUI con `WaitForChild` con timeout). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
 
 ## Overview
 
@@ -135,8 +135,8 @@ Las IAs de los dos compañeros cargan estas skills automáticamente desde el rep
 
 
 - [x] ~~`OilAction` sin rate-limit ni validación de `aim`~~ → **blindado 2026-10-06** (ver sección Blindaje).
-- [ ] **Bug alta**: si `runMatch` lanza un error interno, `match` queda ≠ `nil` para siempre → servidor deja de iniciar partidas (docs/OILCOMBAT.md, bug #1). Ver también #4 (`releaseFighter` sin `dropHolds`) y #6 (carrera con token `session` en MatchLoop).
-- [ ] `OilCombat.doCharge`: busy-wait con `task.wait(0.03)` → migrar a Heartbeat (docs/OILCOMBAT.md, bug #2).
+- [x] ~~**Bug alta**: `runMatch` dejaba `match` colgado~~ → **ARREGADO 2026-10-07**: el cuerpo es `runMatchBody` y `OilCombat.runMatch` lo envuelve en `pcall` + `forceCleanup()` (limpia `match`, `OilMatchActive`/`OilSlick` y libera cada luchero). Verificado inyectando un error real: 0 huérfanos y el combate siguiente arranca. Quedan #4 (`releaseFighter` sin `dropHolds`) y #6 (carrera con token `session` en MatchLoop).
+- [x] ~~`OilCombat.doCharge`: busy-wait `task.wait(0.03)`~~ → **ARREGADO 2026-10-07**: las embestidas están en `activeCharges` y las mueve `tickCharges()` desde el Heartbeat del módulo (1 chequeo por frame, sin despertares extra). Se conserva el retardo de 30ms del primer impacto: el balance no cambia.
 - [ ] Lógica de Tienda y Códigos (UI construida y cableada, `redeem()`/compras = placeholders).
 - [ ] IA estática (sin comportamiento real).
 - [ ] Mover `ProgressionClient` (StarterGui) a `src/client` con refactor de lookup a `PlayerGui`.
