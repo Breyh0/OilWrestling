@@ -1,6 +1,6 @@
 # Memoria del proyecto — Lucha de aceite
 
-> Última actualización: 2026-10-06 (limpieza inicial + **blindaje de remotes**). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
+> Última actualización: 2026-10-06 (limpieza + blindaje + **sistema de animación del compañero extraído**). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
 
 ## Overview
 
@@ -23,7 +23,7 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 
 ## Dónde vive cada cosa
 
-### Código → `src/` (sincronizado por Rojo) — extraído y verificado 1:1 (19 scripts → 17 tras limpieza)
+### Código → `src/` (sincronizado por Rojo) — extraído y verificado 1:1 (19 scripts → 17 tras limpieza → **18 tras el cambio de animación**)
 
 - **`src/server/` → ServerScriptService**
   - `MatchLoop` (Script) — orquestador: StartGame(modo) → intermisión 15s → combate. Gestiona lobby, IA (clona `ServerStorage.FighterTemplate`), renuncias (OilResign), volver al menú (ReturnToMenu), token `session` para descartar esperas viejas, `ensureRemote` de sus remotes.
@@ -38,9 +38,9 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
   - `ProgressionShared` — curva de XP, rangos romanos (Tiro→Imperator), misiones D/S, resets UTC.
   - `*.model.json` — **10 RemoteEvents** declarados (StartGame, MatchUpdate, ReturnToMenu, OilResign, OilAction, OilEvent, OilKnock, UpdateProgression, MissionNotify, RequestProgression). *(PushEvent eliminada en la limpieza.)*
 - **`src/client/` → StarterPlayerScripts**
-  - `OilFighterClient` (input + física local + efectos; setea `PushStartTime` para la pose de empuje de FightIdle) · `OilCombatHUD` (barras equilibrio/stamina, estados, controles con cooldown, RENUNCIAR) · `OilRoundsHUD` (marcador de rounds best-of: nombres, círculos dorados, cuenta atrás, VICTORIA/DERROTA; solo lee eventos `OilEvent`) · `GameHUDClient` (top bar, countdown, MENÚ) · `MainMenuClient` (menú + tienda/códigos: UI cableada, **lógica aún placeholder**) · `LoadingScreenClient` (barra + tips aleatorios + fade) · `FighterGuiClient`.
+  - `OilFighterClient` (input + física local + efectos; setea `PushStartTime` para la pose de empuje de FightIdle) · `OilCombatHUD` (barras equilibrio/stamina, estados, controles con cooldown, RENUNCIAR) · `OilRoundsHUD` (marcador de rounds best-of: nombres, círculos dorados, cuenta atrás, VICTORIA/DERROTA; solo lee eventos `OilEvent`) · `GameHUDClient` (top bar, countdown, MENÚ) · `MainMenuClient` (menú + tienda/códigos: UI cableada, **lógica aún placeholder**) · `LoadingScreenClient` (barra + tips aleatorios + fade) · `FighterGuiClient` · **`CharacterAnimator`** (737 líneas — animación **procedural para TODOS** los luchadores; lee State/Act/Blocking/Dazed/Held/Charging del servidor, poses sin assets, gestos en lobby; consume `PushStartTime`; ojo: el comentario de OilFighterClient:279 aún dice "FightIdle").
 - **`src/character/` → StarterCharacterScripts**
-  - `FightIdle` (pose de guardia vía Motor6D C0; **no deshabilitar el Animate por defecto**). *(PushClient eliminado en la limpieza.)*
+  - `Animate` (stub **intencionalmente vacío** que reemplaza al Animate por defecto de Roblox, con `PlayEmote` falso; las poses las hace CharacterAnimator). *(FightIdle y PushClient eliminados — FightIdle lo reemplazó el sistema de animación del compañero.)*
 
 ### Escena → solo Studio (NO gestionada por Rojo)
 
@@ -50,7 +50,7 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
   - `LoadingScreen`: Title con pulso + Tagline + barra con Shine + **Tip** (tips aleatorios) + **Particles** + **Vignette**.
   - `GameHUD`: TopBar (Status/Accent/ModeChip/TimerLabel), MenuBtn con **HoverScale**, Countdown con **Pop**.
   - `FighterGui`, `ProgressionUI` (+`ProgressionClient` LocalScript dentro — **pendiente**: moverlo a `src/client` refactorizando el lookup a `PlayerGui`).
-- `ServerStorage`: solo `FighterTemplate` (rig R6 de la IA) + `__Rojo_SessionLock` (**marcador del plugin de Rojo — no borrar**). *(Se eliminaron `ZeroScript.Memory` y las3 carpetas `Respaldo_*`: su contenido histórico está en el historial de versiones de Studio.)*
+- `ServerStorage`: `FighterTemplate` (rig R6 de la IA) + `__Rojo_SessionLock` (**marcador del plugin de Rojo — no borrar**) + `Respaldo_Animacion` (creado por supergamertth8 el 2026-10-06 con `FightIdle_original` — **pendiente de decisión**: FightIdle ya está en el historial de git, candidato a borrar). *(Se eliminaron `ZeroScript.Memory` y las3 carpetas `Respaldo_*` antiguas.)*
 
 ### Datos
 
@@ -64,15 +64,21 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 
 ## Gotchas
 
-- **FightIdle vs Animate**: FightIdle setea C0 como base cada Heartbeat; las animaciones de andar se superponen. Nunca deshabilitar el Animate por defecto.
+- **Animación (desde 2026-10-06)**: FightIdle ya **NO existe** — lo reemplazaron `CharacterAnimator` (procedural, anima a todos los luchadores) + `Animate` stub que **sustituye** al Animate por defecto **a propósito**. `PushStartTime` lo setea OilFighterClient:279 y lo consume CharacterAnimator (L386/L492).
+- **⚠️ Duplicados al extraer**: si en Studio existe un script **manual** homónimo de un archivo que acaba de aparecer en `src/`, el plugin de Rojo crea una **SEGUNDA copia** en vez de adoptar la suya (no comparten metadata). Tras extraer scripts nuevos: contar por nombre con `GetChildren()` y deduplicar — conservar la **última** (la de Rojo, es la que sigue al archivo).
 - Durante un playtest hay 2 sesiones MCP (edición + juego); usar `studio_id` explícito.
 - `getNameFromUserIdAsync` con un id de **grupo** devuelve un usuario homónimo — comprobar siempre `game.CreatorType` antes de leer `CreatorId` (de ahí salió el "BrendaRichard38" falso).
 
 ## Limpieza hecha (2026-10-06)
 
-- Eliminado el sistema legacy **PushClient/PushServer/PushEvent** (fijaba un impulso en el MISMO clic izquierdo que el empuje OilAction actual → **bug de doble empuje resuelto**; la pose FightIdle la dispara OilFighterClient:279).
+- Eliminado el sistema legacy **PushClient/PushServer/PushEvent** (fijaba un impulso en el MISMO clic izquierdo que el empuje OilAction actual → **bug de doble empuje resuelto**; la pose de empuje la dispara OilFighterClient:279 y hoy la consume CharacterAnimator).
 - Eliminados 3× `Workspace.Script` (`print("Hello world!")`), `ZeroScript.Memory` y los 3 `Respaldo_*` de ServerStorage.
 - Verificado: 0 referencias a los elementos borrados; servicios gestionados = solo lo declarado en `src/`.
+
+## Sincronización place → repo (2026-10-06, cambios de supergamertth8)
+
+- **Nuevo sistema de animación**: `CharacterAnimator` (SPS, 737 líneas — procedural para TODOS, lee el estado que publica el servidor) + `Animate` stub (SCS) — **reemplazan a FightIdle** (eliminado del place en todo el DataModel). Compat verificada: consume `PushStartTime` ✓.
+- Extraído 1:1 (31476 y 520 bytes, comparación carácter a carácter con relectura doble); duplicados creados por Rojo al aparecer los archivos → deduplicados (conservada la copia de Rojo); `FightIdle` borrado de `src/` para que el próximo sync no lo recree.
 
 ## Blindaje de remotes (2026-10-06)
 
