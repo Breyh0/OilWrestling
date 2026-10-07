@@ -1,6 +1,6 @@
 # Memoria del proyecto — Lucha de aceite
 
-> Última actualización: 2026-10-06 (limpieza + blindaje + **sistema de animación del compañero extraído**). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
+> Última actualización: 2026-10-07 (reparación de daño de la IA del compañero + `OilWinnerCeremony` extraído). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
 
 ## Overview
 
@@ -23,7 +23,7 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 
 ## Dónde vive cada cosa
 
-### Código → `src/` (sincronizado por Rojo) — extraído y verificado 1:1 (19 scripts → 17 tras limpieza → **18 tras el cambio de animación**)
+### Código → `src/` (sincronizado por Rojo) — extraído y verificado 1:1 (19 scripts → 17 tras limpieza → 18 tras el cambio de animación → **19 con OilWinnerCeremony**)
 
 - **`src/server/` → ServerScriptService**
   - `MatchLoop` (Script) — orquestador: StartGame(modo) → intermisión 15s → combate. Gestiona lobby, IA (clona `ServerStorage.FighterTemplate`), renuncias (OilResign), volver al menú (ReturnToMenu), token `session` para descartar esperas viejas, `ensureRemote` de sus remotes.
@@ -38,7 +38,7 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
   - `ProgressionShared` — curva de XP, rangos romanos (Tiro→Imperator), misiones D/S, resets UTC.
   - `*.model.json` — **10 RemoteEvents** declarados (StartGame, MatchUpdate, ReturnToMenu, OilResign, OilAction, OilEvent, OilKnock, UpdateProgression, MissionNotify, RequestProgression). *(PushEvent eliminada en la limpieza.)*
 - **`src/client/` → StarterPlayerScripts**
-  - `OilFighterClient` (input + física local + efectos; setea `PushStartTime` para la pose de empuje de FightIdle) · `OilCombatHUD` (barras equilibrio/stamina, estados, controles con cooldown, RENUNCIAR) · `OilRoundsHUD` (marcador de rounds best-of: nombres, círculos dorados, cuenta atrás, VICTORIA/DERROTA; solo lee eventos `OilEvent`) · `GameHUDClient` (top bar, countdown, MENÚ) · `MainMenuClient` (menú + tienda/códigos: UI cableada, **lógica aún placeholder**) · `LoadingScreenClient` (barra + tips aleatorios + fade) · `FighterGuiClient` · **`CharacterAnimator`** (737 líneas — animación **procedural para TODOS** los luchadores; lee State/Act/Blocking/Dazed/Held/Charging del servidor, poses sin assets, gestos en lobby; consume `PushStartTime`; ojo: el comentario de OilFighterClient:279 aún dice "FightIdle").
+  - `OilFighterClient` (input + física local + efectos; setea `PushStartTime` para la pose de empuje de FightIdle) · `OilCombatHUD` (barras equilibrio/stamina, estados, controles con cooldown, RENUNCIAR) · `OilRoundsHUD` (marcador de rounds best-of: nombres, círculos dorados, cuenta atrás, VICTORIA/DERROTA; solo lee eventos `OilEvent`) · `GameHUDClient` (top bar, countdown, MENÚ) · `MainMenuClient` (menú + tienda/códigos: UI cableada, **lógica aún placeholder**) · `LoadingScreenClient` (barra + tips aleatorios + fade) · `FighterGuiClient` · **`CharacterAnimator`** (737 líneas — animación **procedural para TODOS** los luchadores; lee State/Act/Blocking/Dazed/Held/Charging del servidor, poses sin assets, gestos en lobby; consume `PushStartTime`; ojo: el comentario de OilFighterClient:279 aún dice "FightIdle") · **`OilWinnerCeremony`** (336 líneas — ceremonia animada del ganador al recibir `OilEvent match_end`: rayos giratorios, confeti, corona, nombre con brillo, cuenta atrás; oculta si `match_start` vuelve o si vuelves al menú).
 - **`src/character/` → StarterCharacterScripts**
   - `Animate` (stub **intencionalmente vacío** que reemplaza al Animate por defecto de Roblox, con `PlayEmote` falso; las poses las hace CharacterAnimator). *(FightIdle y PushClient eliminados — FightIdle lo reemplazó el sistema de animación del compañero.)*
 
@@ -67,6 +67,8 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - **Animación (desde 2026-10-06)**: FightIdle ya **NO existe** — lo reemplazaron `CharacterAnimator` (procedural, anima a todos los luchadores) + `Animate` stub que **sustituye** al Animate por defecto **a propósito**. `PushStartTime` lo setea OilFighterClient:279 y lo consume CharacterAnimator (L386/L492).
 - **⚠️ Duplicados al extraer**: si en Studio existe un script **manual** homónimo de un archivo que acaba de aparecer en `src/`, el plugin de Rojo crea una **SEGUNDA copia** en vez de adoptar la suya (no comparten metadata). Tras extraer scripts nuevos: contar por nombre con `GetChildren()` y deduplicar — conservar la **última** (la de Rojo, es la que sigue al archivo).
 - Durante un playtest hay 2 sesiones MCP (edición + juego); usar `studio_id` explícito.
+- **⏱️ Falsos alarmas en el primer playtest tras edición masiva**: los módulos de Roblox tardan en compilar (aparece `Script timeout` en CoreGui y `attempt to index nil 'WaitForChild'` en LOS CUATRO clientes porque PlayerGui tarda >10s en poblarse). **No es daño**: verificar con un **segundo playtest en caliente** antes de diagnosticar (2026-10-07: primer playtest dio4 timeouts, segundo salió limpio18s).
+- **Los `require()` de módulos del servidor fallan en contexto Edit** con `OnServerEvent can only be used on the server` / "Requested module experienced an error while loading" — es del contexto (plugin ≠ servidor), **no** es error de código. El test real es el playtest.
 - `getNameFromUserIdAsync` con un id de **grupo** devuelve un usuario homónimo — comprobar siempre `game.CreatorType` antes de leer `CreatorId` (de ahí salió el "BrendaRichard38" falso).
 
 ## Limpieza hecha (2026-10-06)
@@ -79,6 +81,14 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 
 - **Nuevo sistema de animación**: `CharacterAnimator` (SPS, 737 líneas — procedural para TODOS, lee el estado que publica el servidor) + `Animate` stub (SCS) — **reemplazan a FightIdle** (eliminado del place en todo el DataModel). Compat verificada: consume `PushStartTime` ✓.
 - Extraído 1:1 (31476 y 520 bytes, comparación carácter a carácter con relectura doble); duplicados creados por Rojo al aparecer los archivos → deduplicados (conservada la copia de Rojo); `FightIdle` borrado de `src/` para que el próximo sync no lo recree.
+
+## Incidente: daño de la IA del compañero (2026-10-07)
+
+- **Síntoma**: el juego no arrancaba — `ReplicatedStorage.OilPhysics:1: Expected identifier when parsing expression, got '/'` → cascada: OilCombat:22, MatchLoop:12, OilFighterClient:17 no cargaban.
+- **Causa**: la IA de supergamertth8 editó `OilPhysics` **directamente en el place** (no en git) y le añadió un `/` delante de la cabecera (`/-- OilPhysics...` — artefacto markdown). Un solo byte, cero cambios intencionales (verificado por FNV32: place−`/` == archivo byte a byte).
+- **Reparación**: `/` eliminada vía MCP en el place. Barrido FNV32 de los19 scripts place↔`src/`: **todos idénticos** — no hubo otro daño. Playtest limpio18s ✓.
+- **Lección**: las IAs del compañero **editan el place directamente**. Tras cada sesión de él: correr el barrido de hashes (execute_luau FNV en place + `Get-ChildItem src` FNV en archivos) antes de sincronizar o tocar nada.
+- **Nuevo script suyo**: `OilWinnerCeremony` (SPS,10417 B) — extraído1:1 a `src/client/OilWinnerCeremony.client.luau` (FNV548097969 ✓) y deduplicado el clone que Rojo creó al aparecer el archivo.
 
 ## Blindaje de remotes (2026-10-06)
 
