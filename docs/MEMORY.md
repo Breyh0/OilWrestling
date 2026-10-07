@@ -8,9 +8,9 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 
 ## Datos del place
 
-- placeId `76883498915584` · universe `10769662284` · propietario **BrendaRichard38**
+- placeId `76883498915584` · universe `10769662284` · propiedad del grupo **Kyubu Studio** — propietario: **supergamertth8**
 - **Team Create activo** — trabajar SIEMPRE sobre la sesión viva, nunca sobre copias locales descargadas.
-- Equipo: **Breyh0 + BrendaRichard38**, cada uno con su IA (opencode/Claude) vía Studio MCP.
+- Equipo: **Breyh0 + supergamertth8**, cada uno con su IA (opencode/Claude) vía Studio MCP.
 
 ## Equipo y flujo de trabajo
 

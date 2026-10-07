@@ -20,7 +20,7 @@ git config --global user.email "tu@email"
 
 ## 3. Roblox Studio
 
-1. Abre el place por **Team Create** (BrendaRichard38 es el propietario — debe aparecer en tus places compartidos).
+1. Abre el place por **Team Create** (el place es del grupo **Kyubu Studio**, propietario supergamertth8 — debe aparecer en tus places compartidos).
 2. Con `rojo serve` corriendo en una terminal de la carpeta del repo: en Studio → plugin **Rojo → Connect**. Los scripts de Studio ahora son una **vista** de `src/`.
 
 ## 4. Conecta tu IA (Studio MCP)
