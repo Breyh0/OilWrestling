@@ -16,6 +16,7 @@ local player = Players.LocalPlayer
 
 local OilPhysics = require(ReplicatedStorage:WaitForChild("OilPhysics"))
 local Controls = require(ReplicatedStorage:WaitForChild("OilControls"))
+local OilSplash = require(ReplicatedStorage:WaitForChild("OilSplash"))
 local actionRemote = ReplicatedStorage:WaitForChild("OilAction")
 local eventRemote = ReplicatedStorage:WaitForChild("OilEvent")
 local knockRemote = ReplicatedStorage:WaitForChild("OilKnock")
@@ -434,10 +435,20 @@ local function burst(pos, color, size)
 	Debris:AddItem(p, 0.4)
 end
 
+-- Salpicadura de aceite asociada a cada tipo de impacto (potencia 0..1)
+local FX_SPLASH = {
+	hit = 0.45, counter = 0.6, throw = 0.8, launch = 1, grab = 0.5,
+	dodge = 0.3, dash = 0.3, ["break"] = 0.7, ringout = 1,
+}
+
 eventRemote.OnClientEvent:Connect(function(kind, a, b)
 	if kind == "fx" then
 		local style = FX[a] or FX.hit
 		burst(b, style[1], style[2])
+		local sp = FX_SPLASH[a]
+		if sp then
+			OilSplash.splash(b, sp)
+		end
 	end
 end)
 

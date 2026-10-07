@@ -1,6 +1,6 @@
 # Memoria del proyecto — Lucha de aceite
 
-> Última actualización: 2026-10-07 (reparación de daño de la IA del compañero + `OilWinnerCeremony` extraído). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
+> Última actualización: 2026-10-07 (tarde: suelo aceitoso + resbalón + salpicaduras + fix de GUI con `WaitForChild` con timeout; antes: reparación de daño de la IA del compañero + `OilWinnerCeremony` extraído). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
 
 ## Overview
 
@@ -23,7 +23,7 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 
 ## Dónde vive cada cosa
 
-### Código → `src/` (sincronizado por Rojo) — extraído y verificado 1:1 (19 scripts → 17 tras limpieza → 18 tras el cambio de animación → **19 con OilWinnerCeremony**)
+### Código → `src/` (sincronizado por Rojo) — extraído y verificado 1:1 (19 scripts → 17 tras limpieza → 18 tras el cambio de animación → 19 con OilWinnerCeremony → **20 con OilSplash**)
 
 - **`src/server/` → ServerScriptService**
   - `MatchLoop` (Script) — orquestador: StartGame(modo) → intermisión 15s → combate. Gestiona lobby, IA (clona `ServerStorage.FighterTemplate`), renuncias (OilResign), volver al menú (ReturnToMenu), token `session` para descartar esperas viejas, `ensureRemote` de sus remotes.
@@ -34,6 +34,7 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - **`src/shared/` → ReplicatedStorage**
   - `OilConfig` — **fuente única de balance**: PointsToWin=3, RoundTimeout=45, acciones (Push/Charge/Grab), Balance, Stamina, Block/Parry/Dodge, slick ramp.
   - `OilPhysics` — inercia sobre aceite. Autoridad: el jugador ejecuta su paso; la IA lo ejecuta el servidor.
+  - `OilSplash` — salpicaduras **cosméticas y locales** (gotas balísticas + onda en el charco, sin remotes): `splash(pos, power, {dir, ripple})`, `land(pos, impact)`, `knock(pos, dir)`. Lo usan CharacterAnimator (aterrizar/derribar) y OilFighterClient (impactos `fx`).
   - `OilControls` — fuente única de keybinds + BindableEvents locales (Request, ResignState) que HUD e input comparten.
   - `ProgressionShared` — curva de XP, rangos romanos (Tiro→Imperator), misiones D/S, resets UTC.
   - `*.model.json` — **10 RemoteEvents** declarados (StartGame, MatchUpdate, ReturnToMenu, OilResign, OilAction, OilEvent, OilKnock, UpdateProgression, MissionNotify, RequestProgression). *(PushEvent eliminada en la limpieza.)*
@@ -67,9 +68,14 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - **Animación (desde 2026-10-06)**: FightIdle ya **NO existe** — lo reemplazaron `CharacterAnimator` (procedural, anima a todos los luchadores) + `Animate` stub que **sustituye** al Animate por defecto **a propósito**. `PushStartTime` lo setea OilFighterClient:279 y lo consume CharacterAnimator (L386/L492).
 - **⚠️ Duplicados al extraer**: si en Studio existe un script **manual** homónimo de un archivo que acaba de aparecer en `src/`, el plugin de Rojo crea una **SEGUNDA copia** en vez de adoptar la suya (no comparten metadata). Tras extraer scripts nuevos: contar por nombre con `GetChildren()` y deduplicar — conservar la **última** (la de Rojo, es la que sigue al archivo).
 - Durante un playtest hay 2 sesiones MCP (edición + juego); usar `studio_id` explícito.
-- **⏱️ Falsos alarmas en el primer playtest tras edición masiva**: los módulos de Roblox tardan en compilar (aparece `Script timeout` en CoreGui y `attempt to index nil 'WaitForChild'` en LOS CUATRO clientes porque PlayerGui tarda >10s en poblarse). **No es daño**: verificar con un **segundo playtest en caliente** antes de diagnosticar (2026-10-07: primer playtest dio4 timeouts, segundo salió limpio18s).
+- **⏱️ Los 4 clientes se morían con `attempt to index nil 'WaitForChild'`** (LoadingScreen:13 / FighterGui:9 / GameHUD:12 / MainMenu:11): NO era ruido transitorio de compilación — hacían `WaitForChild(..., 10/20)` y en este place pesado PlayerGui tarda **más que el timeout** en poblarse → script muerto → carga congelada en 0% para siempre. **FIX 2026-10-07**: timeouts eliminados (espera infinita, patrón estándar) en los 4 archivos de `src/client`. Si vuelve el síntoma, revisar que no se hayan reintroducido timeouts.
 - **Los `require()` de módulos del servidor fallan en contexto Edit** con `OnServerEvent can only be used on the server` / "Requested module experienced an error while loading" — es del contexto (plugin ≠ servidor), **no** es error de código. El test real es el playtest.
 - `getNameFromUserIdAsync` con un id de **grupo** devuelve un usuario homónimo — comprobar siempre `game.CreatorType` antes de leer `CreatorId` (de ahí salió el "BrendaRichard38" falso).
+- **📸 `screen_capture` con `camera_position` devuelve frames CACHÉ** (no refleja ediciones — el "misterio del suelo azul" era esto); en bruto es live pero puede ir con retardo tras editar. La verificación visual definitiva es **en playtest**, no por capturas de edición.
+- **🔌 Rojo puede "kick"ear la sesión live** (`Kicked from Live Scripting Session: Server received illegal atomic operation`, stack `RbxDom.customProperties` ×3): puede dejar de syncear **un solo archivo** (2026-10-07: OilPhysics) mientras los demás siguen subiendo. Síntoma: `Source` del place viejo con archivo nuevo en disco. **Workaround**: escribir el `Source` directamente con `execute_luau` (`inst.Source = contenido` funciona desde el contexto de comando) y verificar `back == content`; el disco sigue siendo la fuente de verdad.
+- **🧊 `require()` en contexto Edit cachea**: puede devolver valores VIEJOS si el módulo ya se cargó en la sesión (OilConfig nuevo devolvía Traction=2.6 con Source ya en 2.15). Verificar vía `.Source`, no vía `require`. El playtest carga fresco ✓.
+- **🔇 `StartGame` se rechaza en silencio si `activeMode ~= nil`** (partida/intermisión en curso) — síntoma: nada pasa y sin error. Confirmar escuchando `MatchUpdate` (evento `intermission/N` = aceptado). Intermisión = 15s; IA en `ServerStorage.FighterTemplate`.
+- **🎮 Hay input injection**: `user_keyboard_input` / `user_mouse_input` (acciones `keyDown`/`keyUp`/`keyPress`/`wait`, `datamodel_type: "Client"`) — sirve para playtestears sin manos. OJO: la latencia entre llamadas del modelo (~30-60s) **supera la duración de un round** → meter TODO el flujo de prueba (esperar partida + teclas + sondeos) en **UNA sola llamada** `execute`.
 
 ## Limpieza hecha (2026-10-06)
 
@@ -97,7 +103,18 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - El cooldown `cd_` lo pone **el servidor**: un paquete recortado por el throttle no cobra cooldown — el jugador puede reintentar enseguida.
 - Mapa completo del núcleo: `docs/OILCOMBAT.md`.
 
+## Sesión 2026-10-07 (tarde): suelo aceitoso + resbalón + salpicaduras
+
+- **`OilConfig`**: Traction 2.6→**2.15**, Glide 1.35→**0.95** (más derrape), SlickMax 2.0→**2.3**, nuevos `TurnSlick=1.1`, `TurnSlickMax=1.8`, `TurnSlickDecay=4.5`.
+- **`OilPhysics`**: **turn-slip** en `stepOne` — si la intención cambia brusca (dot<0.98 con la del frame anterior, `prevIntent` capturado antes de sobreescribir `st.lastIntent`) sube `st.turnSlick` y multiplica el rate de tracción `CFG.Traction / (slick * (1 + turnSlick))`; decae exponencial (`TurnSlickDecay`). Campo `turnSlick` inicializado en `attach`.
+- **`CharacterAnimator`**: pose **`POSE.slip`** (tras `skid`; peso `slip` = velocidad × |yawRate|; molinete procedural con `S.slipPhase` — piernas alternas, torso y brazos balanceados), `busy += W.slip*0.7`, y **ganchos de salpicadura**: aterrizaje (`impact>6` + **gate `OilPhysics.isOverArena`** — no salpica en el lobby) y borde knocked → `OilSplash.knock(S.floorPos, vel)`. Requiere `OilSplash`/`OilPhysics` con `WaitForChild(10)` + guards.
+- **Nuevo `src/shared/OilSplash.luau`** (módulo cosmético local, sin remotes): gotas balísticas (2 tweens sube/cae, 4–13 por ráfaga) + onda disco achatado con TweenService/Debris; APIs `splash(pos, power, {dir, ripple})`, `land(pos, impact)`, `knock(pos, dir)`.
+- **`OilFighterClient`**: tabla `FX_SPLASH` (hit .45, counter .6, throw .8, launch 1, grab .5, dodge .3, dash .3, break .7, ringout 1) → `OilSplash.splash` en el handler `fx`.
+- **Fix GUI (crítico)**: sin timeouts de `WaitForChild` en LoadingScreenClient/FighterGuiClient/GameHUDClient/MainMenuClient (ver Gotchas).
+- **Verificado en playtest 2026-10-07**: 0 errores de juego; `OilSlick` ciclando (1.117); gotas vistas **153** en pelea real / **121** splash directo / **117** tras knock simulado; onda = **8–9 muestras** a 0.05s (exactamente 1 vida útil ✓); knock → `PlatformStand=true` → splash ✓; gate de lobby ✓; suelo ámbar con borde dorado y sheen en vivo ✓.
+
 ## TODO / Known issues
+
 
 - [x] ~~`OilAction` sin rate-limit ni validación de `aim`~~ → **blindado 2026-10-06** (ver sección Blindaje).
 - [ ] **Bug alta**: si `runMatch` lanza un error interno, `match` queda ≠ `nil` para siempre → servidor deja de iniciar partidas (docs/OILCOMBAT.md, bug #1). Ver también #4 (`releaseFighter` sin `dropHolds`) y #6 (carrera con token `session` en MatchLoop).

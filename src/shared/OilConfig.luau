@@ -9,7 +9,7 @@ return {
 	CountdownSeconds = 3,
 	RoundTimeout = 45,      -- seg. sin ring-out => ronda nula
 	SlickRampStart = 18,    -- desde aquí el aceite "se calienta" y resbala cada vez más
-	SlickMax = 2.0,         -- multiplicador máximo de resbalón al llegar al timeout
+	SlickMax = 2.3,         -- multiplicador máximo de resbalón al llegar al timeout
 	PostPointPause = 2.6,
 	VictoryPause = 4.5,
 	AssistWindow = 6,       -- seg. en que un golpe aún cuenta como causante del ring-out
@@ -19,8 +19,11 @@ return {
 
 	-- ===== Física sobre aceite =====
 	WalkSpeed = 15,
-	Traction = 2.6,         -- qué tan rápido acelera hacia donde quieres ir (1/s)
-	Glide = 1.35,           -- qué tan rápido frena sin input (1/s) -> menor = más resbalón
+	Traction = 2.15,        -- qué tan rápido acelera hacia donde quieres ir (1/s) -> menor = más resbalón
+	Glide = 0.95,           -- qué tan rápido frena sin input (1/s) -> menor = más resbalón
+	TurnSlick = 1.1,        -- tracción que pierdes al girar brusco (las piernas se escapan)
+	TurnSlickMax = 1.8,     -- tope de ese resbalón instantáneo
+	TurnSlickDecay = 4.5,   -- 1/s: cuánto tarda el suelo en "agarrar" otra vez
 	AirControl = 0.25,      -- control en el aire (fracción de la tracción)
 	StunDrag = 1.1,         -- arrastre del cuerpo derribado
 	HeldDrag = 7,           -- arrastre cuando estás agarrado / en cuenta regresiva

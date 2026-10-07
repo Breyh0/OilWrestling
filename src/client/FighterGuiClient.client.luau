@@ -5,15 +5,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
-local gui = player:WaitForChild("PlayerGui", 10):WaitForChild("FighterGui", 10)
-local panel = gui:WaitForChild("Panel", 5)
-local status = panel:WaitForChild("Status", 5)
-local sub = panel:WaitForChild("Sub", 5)
+local gui = player:WaitForChild("PlayerGui"):WaitForChild("FighterGui")
+local panel = gui:WaitForChild("Panel")
+local status = panel:WaitForChild("Status")
+local sub = panel:WaitForChild("Sub")
 
-local matchEvent = ReplicatedStorage:WaitForChild("MatchUpdate", 10)
+local matchEvent = ReplicatedStorage:WaitForChild("MatchUpdate")
 
 -- Solo visible cuando el jugador ya salio del menu principal
-local menu = player:WaitForChild("PlayerGui", 10):WaitForChild("MainMenu", 20)
+local menu = player:WaitForChild("PlayerGui"):WaitForChild("MainMenu")
 local function syncVisibility()
 	gui.Enabled = not (menu and menu.Enabled)
 end

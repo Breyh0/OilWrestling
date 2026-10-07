@@ -18,6 +18,12 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local splashMod = ReplicatedStorage:WaitForChild("OilSplash", 10)
+local OilSplash = splashMod and require(splashMod)
+local physicsMod = ReplicatedStorage:WaitForChild("OilPhysics", 10)
+local OilPhysics = physicsMod and require(physicsMod)
 
 local CONFIG = {
 	Intensity = 1.0,       -- 0.6 = mas sutil | 1.4 = mas exagerado (marcha y movimientos sutiles)
@@ -119,6 +125,13 @@ POSE.skid = full{
 	lean = -0.28, chest = -0.10, crouch = 0.35, spread = 0.36,
 	rHip = 0.30, lHip = 0.30, rKnee = 0.22, lKnee = 0.22,
 	rSh = 0.70, lSh = 0.70, rAb = 0.95, lAb = 0.95, rEl = 0.35, lEl = 0.35, headPitch = -0.10,
+}
+-- Resbalon sobre aceite: cuerpo ladeado y brazos abiertos buscando el equilibrio
+-- (las piernas van en molinete de forma procedural en la composicion)
+POSE.slip = full{
+	lean = -0.12, chest = 0.06, crouch = 0.42, spread = 0.44, twist = 0.10, roll = 0.10,
+	rHip = 0.36, lHip = -0.30, rKnee = 0.24, lKnee = 0.10,
+	rSh = 1.35, lSh = 1.30, rAb = 1.20, lAb = 1.15, rEl = 0.50, lEl = 0.55, headPitch = -0.08,
 }
 POSE.sit = full{ rHip = 1.5, lHip = 1.5, rKnee = 1.45, lKnee = 1.45, rSh = 0.3, lSh = 0.3, rAb = 0.15, lAb = 0.15, rEl = 0.5, lEl = 0.5 }
 POSE.pushed = full{
@@ -408,13 +421,14 @@ local function newState(char, hum)
 		seed = rng:NextNumber(0, 100),
 		phase = 0, spd = 0, vy = 0, vs = 0, vf = 0, n = 0, accel = 0, lastSpd = 0, yawRate = 0, lastYaw = nil,
 		grounded = true, wasGrounded = true, airT = 0, lastVy = 0, landX = 0, landV = 0,
+		slipPhase = 0, wasKnocked = false, floorPos = nil,
 		wGuard = 0, w = {}, act = nil, actStart = 0, lastActT = char:GetAttribute("ActT"),
 		lastPushStart = char:GetAttribute("PushStartTime"), localPushAt = -10,
 		dodgeRoll = 0, dodgeFwd = 0, gest = nil, nextGest = 0, nextTrackStop = 0,
 		rival = nil, nextRival = 0, init = false, dead = false,
 		B = newParams(), tmp = newParams(), cur = newParams(), F = newParams(),
 	}
-	for _, name in ipairs({ "sit", "air", "skid", "locked", "blocking", "offbalance", "pushed", "dazed", "grabbing", "grabbed", "knocked", "charge" }) do
+	for _, name in ipairs({ "sit", "air", "skid", "slip", "locked", "blocking", "offbalance", "pushed", "dazed", "grabbing", "grabbed", "knocked", "charge" }) do
 		S.w[name] = 0
 	end
 	S.nextGest = os.clock() + 3 + rng:NextNumber(0, 4)
@@ -500,12 +514,25 @@ local function step(S, dt, now)
 	local hit = Workspace:Raycast(hrp.Position, Vector3.new(0, -hip, 0), S.rayParams)
 	S.wasGrounded = S.grounded
 	S.grounded = hit ~= nil
-	if S.grounded then S.airT = 0 else S.airT += dt end
+	if S.grounded then
+		S.airT = 0
+		S.floorPos = hit.Position
+	else
+		S.airT += dt
+	end
 	if S.grounded and not S.wasGrounded and not knockedState then
 		local impact = max(0, -S.lastVy)
 		if impact > 10 then S.landV = min(impact * 0.55, 16) end
+		if impact > 6 and OilSplash and OilPhysics and OilPhysics.isOverArena(hit.Position, 1) then
+			OilSplash.land(hit.Position, impact)
+		end
 	end
 	S.lastVy = v.Y
+	-- Derribo: el cuerpo se estrella contra el charco y salpica hacia donde vuela
+	if knockedState and not S.wasKnocked and OilSplash and S.floorPos then
+		OilSplash.knock(S.floorPos, Vector3.new(v.X, 0, v.Z))
+	end
+	S.wasKnocked = knockedState
 	-- amortiguador del aterrizaje (resorte)
 	local acc = -220 * S.landX - 16 * S.landV
 	S.landV += acc * dt
@@ -538,6 +565,7 @@ local function step(S, dt, now)
 		sit = hum.Sit and 1 or 0,
 		air = (not S.grounded and S.airT > 0.08 and not knockedState) and 1 or 0,
 		skid = inMatch and S.grounded and clamp(-S.accel / 14, 0, 1) * smooth01((spd - 5) / 6) or 0,
+		slip = inMatch and S.grounded and smooth01((spd - 6) / 8) * clamp(abs(S.yawRate) / 4.5, 0, 1) or 0,
 		locked = (char:GetAttribute("Locked") == true and not held) and 1 or 0,
 		blocking = (blocking and not held) and 1 or 0,
 		offbalance = (state == "offbalance") and 1 or 0,
@@ -592,6 +620,20 @@ local function step(S, dt, now)
 	blend(O, POSE.sit, W.sit)
 	if W.air > 0.002 then poseAir(S, S.tmp) blend(O, S.tmp, W.air) end
 	blend(O, POSE.skid, W.skid)
+	if W.slip > 0.002 then
+		-- piernas que se escapan: molinete procedural + cuerpo ladeado buscando el equilibrio
+		S.slipPhase = (S.slipPhase + dt * TAU * 2.6) % TAU
+		copyInto(S.tmp, POSE.slip)
+		local sp = sin(S.slipPhase)
+		S.tmp.rHip += 0.60 * sp
+		S.tmp.lHip -= 0.60 * sp
+		S.tmp.rKnee += 0.35 * max(0, sp)
+		S.tmp.lKnee += 0.35 * max(0, -sp)
+		S.tmp.twist += 0.12 * sp
+		S.tmp.rSh += 0.18 * sp
+		S.tmp.lSh -= 0.18 * sp
+		blend(O, S.tmp, W.slip)
+	end
 	if W.locked > 0.002 then
 		copyInto(S.tmp, POSE.salute)
 		S.tmp.rSh += 0.05 * sin(now * 2.2)
@@ -643,7 +685,7 @@ local function step(S, dt, now)
 	-- ===== capas aditivas (marcha, respiracion, mirada...) =====
 	local F = S.F
 	copyInto(F, S.cur)
-	local busy = max(W.air * 0.9, W.knocked, W.grabbed, W.charge, W.grabbing * 0.7, W.dazed * 0.5, W.offbalance * 0.5, W.sit, actW)
+	local busy = max(W.air * 0.9, W.knocked, W.grabbed, W.charge, W.grabbing * 0.7, W.dazed * 0.5, W.offbalance * 0.5, W.slip * 0.7, W.sit, actW)
 	local calm = 1 - busy
 	local I = CONFIG.Intensity
 

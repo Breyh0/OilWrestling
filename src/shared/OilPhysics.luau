@@ -78,6 +78,7 @@ function M.attach(character, opts)
 		faceUntil = 0,
 		lastLook = look.Magnitude > 0.05 and look.Unit or Vector3.new(0, 0, -1),
 		lastIntent = Vector3.zero,
+		turnSlick = 0, -- resbalón acumulado al girar brusco (ver stepOne)
 	}
 	states[character] = st
 	character.AncestryChanged:Connect(function(_, parent)
@@ -210,6 +211,7 @@ end
 
 local function stepOne(st, dt, now, slick)
 	local hum, root, char = st.hum, st.root, st.char
+	local prevIntent = st.lastIntent -- intención del frame anterior (para detectar giros bruscos)
 
 	-- Derribado: cuerpo libre deslizando con arrastre
 	if st.stunUntil then
@@ -263,13 +265,23 @@ local function stepOne(st, dt, now, slick)
 		hum.Jump = false
 	end
 
+	-- Giro brusco: el aceite no engancha y las piernas se te escapan un instante
+	if intent.Magnitude > 0.1 and prevIntent and prevIntent.Magnitude > 0.1 then
+		local dot = intent.Unit:Dot(prevIntent.Unit)
+		if dot < 0.98 then
+			local kick = (1 - dot) * CFG.TurnSlick * 2
+			st.turnSlick = math.min(math.max(st.turnSlick or 0, kick), CFG.TurnSlickMax)
+		end
+	end
+	st.turnSlick = (st.turnSlick or 0) * math.exp(-CFG.TurnSlickDecay * dt)
+
 	-- Modelo de tracción: velocidad exponencial hacia la deseada, con poca fricción
 	local grounded = hum.FloorMaterial ~= Enum.Material.Air
 	local rate
 	if locked or held then
 		rate = CFG.HeldDrag
 	elseif intent.Magnitude > 0.1 then
-		rate = CFG.Traction / slick
+		rate = CFG.Traction / (slick * (1 + (st.turnSlick or 0)))
 	else
 		rate = CFG.Glide / slick
 	end
