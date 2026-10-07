@@ -932,9 +932,35 @@ function OilCombat.perform(e, action, aim)
 	end
 end
 
+-- Anti-abuso: mínimo 0.08s entre acciones iguales (misma tasa que ya deja pasar el
+-- cliente) y 0.02s para block/unblock (solo dedupe de red; nunca corta un pulso humano).
+local actionAt = setmetatable({}, { __mode = "k" }) -- [player] = { [accion] = reloj }
 actionRemote.OnServerEvent:Connect(function(player, action, aim)
-	if not match or type(action) ~= "string" then
+	if not match then
 		return
+	end
+	if action ~= "block" and action ~= "unblock" and not ACTIONS[action] then
+		return -- whitelist: cualquier otra cadena se descarta aquí mismo
+	end
+	local now = os.clock()
+	local minGap = (action == "block" or action == "unblock") and 0.02 or 0.08
+	local stamps = actionAt[player]
+	if stamps and stamps[action] and now - stamps[action] < minGap then
+		return
+	end
+	stamps = stamps or {}
+	stamps[action] = now
+	actionAt[player] = stamps
+	if aim ~= nil then
+		-- aim debe ser Vector3 finito; NaN/inf u otros tipos -> nil (perform usa la mirada)
+		local finite = typeof(aim) == "Vector3"
+		if finite then
+			local mag = aim.Magnitude
+			finite = mag == mag and mag ~= math.huge
+		end
+		if not finite then
+			aim = nil
+		end
 	end
 	for _, e in ipairs(match.fighters) do
 		if e.player == player then

@@ -1,6 +1,6 @@
 # Memoria del proyecto — Lucha de aceite
 
-> Última actualización: 2026-10-06 (tras la **limpieza inicial**). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
+> Última actualización: 2026-10-06 (limpieza inicial + **blindaje de remotes**). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
 
 ## Overview
 
@@ -74,12 +74,19 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - Eliminados 3× `Workspace.Script` (`print("Hello world!")`), `ZeroScript.Memory` y los 3 `Respaldo_*` de ServerStorage.
 - Verificado: 0 referencias a los elementos borrados; servicios gestionados = solo lo declarado en `src/`.
 
+## Blindaje de remotes (2026-10-06)
+
+- Superficie entrante (cliente→servidor) =5 handlers: `StartGame` (validado: whitelist de modo + guard `activeMode`), `OilResign` (throttle 1s), `ReturnToMenu` (throttle 1s — **añadido**), `OilAction` (**blindado**), `RequestProgression` (throttle 1s + tabla weak). `OilEvent`/`OilKnock`/`MatchUpdate`/`UpdateProgression`/`MissionNotify` = solo server→client.
+- `OilAction` (OilCombat): whitelist (`ACTIONS` + block/unblock, todo lo demás se descarta), throttle por jugador+acción con tabla weak (0.08s acciones — igual que el cliente legítimo — y 0.02s block/unblock), `aim` debe ser Vector3 finito (NaN/inf→nil, si no perform usa la mirada), y solo si el player está en `match.fighters`.
+- El cooldown `cd_` lo pone **el servidor**: un paquete recortado por el throttle no cobra cooldown — el jugador puede reintentar enseguida.
+- Mapa completo del núcleo: `docs/OILCOMBAT.md`.
+
 ## TODO / Known issues
 
-- [ ] `OilAction`: sin rate-limit ni validación de `aim` (solo `type` check) antes de `perform()`.
+- [x] ~~`OilAction` sin rate-limit ni validación de `aim`~~ → **blindado 2026-10-06** (ver sección Blindaje).
 - [ ] `OilCombat.doCharge`: busy-wait con `task.wait(0.03)` → migrar a Heartbeat.
 - [ ] Lógica de Tienda y Códigos (UI construida y cableada, `redeem()`/compras = placeholders).
 - [ ] IA estática (sin comportamiento real).
 - [ ] Mover `ProgressionClient` (StarterGui) a `src/client` con refactor de lookup a `PlayerGui`.
 - [ ] Invitar a supergamertth8 al repo (Settings → Collaborators) y que ejecute SETUP.md.
-- [ ] Blindaje de seguridad de remotes + tests. ~~Extracción~~ HECHA: 17 scripts, verificación 1:1 por SHA-256.
+- [ ] Tests automatizados. ~~Blindaje de seguridad de remotes~~ HECHO 2026-10-06 (ver sección Blindaje). ~~Extracción~~ HECHA: 17 scripts, verificación 1:1 por SHA-256.

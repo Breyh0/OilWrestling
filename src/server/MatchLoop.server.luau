@@ -36,6 +36,7 @@ local soloPlayer = nil
 local session = 0       -- se incrementa al cancelar, para que las esperas pendientes se descarten
 local inMenu = {}       -- jugadores que volvieron al menu: no se les arrastra a un combate
 local lastResign = {}
+local lastReturn = {}
 
 -- ===== Lobby =====
 local function getLobbyCFrame()
@@ -236,6 +237,11 @@ end
 
 -- ===== Volver al menu =====
 returnEvent.OnServerEvent:Connect(function(player)
+	local t = os.clock()
+	if lastReturn[player] and t - lastReturn[player] < 1 then
+		return -- anti-spam: el cliente ya hace su parte al pulsar MENÚ
+	end
+	lastReturn[player] = t
 	OilCombat.resign(player) -- salir en pleno combate cuenta como renuncia: el rival gana
 	inMenu[player] = true
 	cancelSoloFor(player)
@@ -265,6 +271,7 @@ Players.PlayerRemoving:Connect(function(player)
 	cancelSoloFor(player)
 	inMenu[player] = nil
 	lastResign[player] = nil
+	lastReturn[player] = nil
 end)
 
 return true
