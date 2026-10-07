@@ -108,6 +108,17 @@ end
 -- POSES ESTATICAS
 -- ============================================================
 local POSE = {}
+
+-- Estados de IMPACTO: los que el cuerpo RECIBE (empujon, golpe, caida, desequilibrio,
+-- embestida). Entran rapido (el golpe tiene que notarse ya) y se recuperan despacio
+-- (la recuperacion es justo lo que se percibe como peso).
+-- Los estados sostenidos (guardia, bloqueo, agarre) usan rates suaves.
+local IMPACT_STATES = {
+	pushed = true, knocked = true, dazed = true, offbalance = true, charge = true,
+}
+local IMPACT_IN, IMPACT_OUT = 34, 7 -- reactivo
+local NEUTRAL_IN, NEUTRAL_OUT = 15, 9 -- sostenido
+
 -- Lobby: erguido, pecho adelante, brazos sueltos y relajados
 POSE.lobby = full{ chest = -0.05, rSh = 0.04, lSh = 0.04, rAb = 0.10, lAb = 0.10, rEl = 0.16, lEl = 0.16, headPitch = -0.02, spread = 0.07 }
 -- Guardia de luchador: cadera baja, piernas abiertas, manos adelante listas para agarrar
@@ -501,10 +512,14 @@ local function step(S, dt, now)
 	S.vf, S.vs = flat:Dot(lf), flat:Dot(rf)
 	S.n = clamp(spd / max(hum.WalkSpeed, 8), 0, 1.8)
 
-	S.accel = approach(S.accel, (spd - S.lastSpd) / dt, 12, dt)
+	-- Filtros de inercia. El rate determina cuanto tarda el cuerpo en "creer" el
+	-- movimiento: con rates altos (30-40) el cuerpo responde al instante y la
+	-- inercia sale de las poses, no del retraso del filtro. Antes iban en 12 y 10,
+	-- que es lo que hacia que el luchador se deslizara.
+	S.accel = approach(S.accel, (spd - S.lastSpd) / dt, 30, dt)
 	S.lastSpd = spd
 	local yaw = atan2(-look.X, -look.Z)
-	if S.lastYaw then S.yawRate = approach(S.yawRate, wrapAngle(yaw - S.lastYaw) / dt, 10, dt) end
+	if S.lastYaw then S.yawRate = approach(S.yawRate, wrapAngle(yaw - S.lastYaw) / dt, 26, dt) end
 	S.lastYaw = yaw
 
 	-- ===== suelo / aire / aterrizaje =====
@@ -576,9 +591,15 @@ local function step(S, dt, now)
 		knocked = knockedState and 1 or 0,
 		charge = (char:GetAttribute("Charging") == true) and 1 or 0,
 	}
+	-- Rates distintos por tipo de estado: es lo que da "peso" al movimiento.
+	-- Antes todos usaban 15 al entrar y 9 al salir, asi que un empujon seco
+	-- tardaba lo mismo en aplicarse que un cambio sutil de guardia.
 	for name, target in pairs(tg) do
 		local cur = S.w[name]
-		S.w[name] = approach(cur, target, (target > cur) and 15 or 9, dt)
+		local isImpact = IMPACT_STATES[name]
+		local inRate = isImpact and IMPACT_IN or NEUTRAL_IN
+		local outRate = isImpact and IMPACT_OUT or NEUTRAL_OUT
+		S.w[name] = approach(cur, target, (target > cur) and inRate or outRate, dt)
 	end
 	local W = S.w
 
@@ -676,10 +697,13 @@ local function step(S, dt, now)
 		copyInto(S.cur, O)
 		S.init = true
 	end
-	local rate = CONFIG.Smoothing * (1 + 0.6 * actW)
+	-- Suavizado final. Durante una accion el rate BAJA en vez de subir: asi el
+	-- golpe entra nitido y la recuperacion se asienta despacio (mas pesada).
+	-- Antes era al reves (1 + 0.6 * actW) y por eso las poses se veian blandas.
+	local rate = CONFIG.Smoothing * (1 - 0.35 * clamp(actW, 0, 1))
 	for i = 1, #KEYS do
 		local key = KEYS[i]
-		S.cur[key] = approach(S.cur[key], O[key], rate, dt)
+		S.cur[key] = approach(S.cur[key], O[key], max(rate, 6), dt)
 	end
 
 	-- ===== capas aditivas (marcha, respiracion, mirada...) =====
