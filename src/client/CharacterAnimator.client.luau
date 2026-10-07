@@ -384,6 +384,65 @@ local function setJoint(jd, cf)
 end
 
 -- Convierte los parametros de pose finales en rotaciones de articulaciones
+-- ============================================================
+-- SEGUNDO MOVIMIENTO (follow-through)
+-- ============================================================
+-- Hombros, codos y cuello NO siguen al torso al instante: lo persiguen con retardo
+-- y rebotan al frenar. Implementado como muelle amortiguado (x'' = k*(obj-x) - c*x')
+-- sobre el error entre la pose final (F) y su propia version retrasada, de modo que
+-- el rebote sale de la dinamica del muelle y no de un seno fabricationado: responde
+-- igual a golpes, giros, frenadas y caidas.
+--
+-- Se guarda en S.fk (estado por personaje) y devuelve el ajuste ya aplicado sobre F.
+local FK_KEYS = { "rSh", "lSh", "rEl", "lEl" }
+local FK_HEAD = { "headPitch", "headYaw" }
+
+local function followThrough(S, F, dt, intensity)
+	local fk = S.fk
+
+	-- 1) Muelle por articulacion: persiguen la pose final con retardo.
+	--    El error (obj - x) es justo "lo que aun no ha llegado".
+	for _, key in ipairs(FK_KEYS) do
+		local vkey = key .. "V"
+		local v = fk[vkey] or 0
+		local x = fk[key] or F[key] -- primer frame: sin muelle, arranca en la pose
+		local a = (F[key] - x) * 210 - v * 21
+		v += a * dt
+		x += v * dt
+		fk[key] = x
+		fk[vkey] = v
+	end
+	for _, key in ipairs(FK_HEAD) do
+		local vkey = key .. "V"
+		local v = fk[vkey] or 0
+		local x = fk[key] or F[key]
+		local a = (F[key] - x) * 145 - v * 17
+		v += a * dt
+		x += v * dt
+		fk[key] = x
+		fk[vkey] = v
+	end
+
+	-- 2) Aplicar el retraso: la articulacion se queda donde va la inercia,
+	--    no donde pide la pose. La velocidad del muelle amplifica el efecto:
+	--    cuanto mas rapido se mueve, mas se "estira" (el latigazo del golpe).
+	local whip = 0
+	for _, key in ipairs(FK_KEYS) do
+		local v = fk[key .. "V"]
+		whip = math.max(whip, math.abs(v))
+	end
+	-- tope: con.Management golpes muy rapidos el muelle podria dar una vuelta de mas
+	local k = clamp(whip * 0.055, 0, 0.55) * intensity
+
+	for _, key in ipairs(FK_KEYS) do
+		F[key] += (fk[key] - F[key]) * k
+	end
+	for _, key in ipairs(FK_HEAD) do
+		F[key] += (fk[key] - F[key]) * k * 1.35 -- la cabeza exagerua un poco mas
+	end
+	return k
+end
+
 local function applyPose(S, F)
 	local rig = S.rig
 	local J = rig.j
@@ -437,6 +496,7 @@ local function newState(char, hum)
 		lastPushStart = char:GetAttribute("PushStartTime"), localPushAt = -10,
 		dodgeRoll = 0, dodgeFwd = 0, gest = nil, nextGest = 0, nextTrackStop = 0,
 		rival = nil, nextRival = 0, init = false, dead = false,
+		fk = {}, -- segundo movimiento (follow-through): estado del muelle por articulacion
 		B = newParams(), tmp = newParams(), cur = newParams(), F = newParams(),
 	}
 	for _, name in ipairs({ "sit", "air", "skid", "slip", "locked", "blocking", "offbalance", "pushed", "dazed", "grabbing", "grabbed", "knocked", "charge" }) do
@@ -791,6 +851,10 @@ local function step(S, dt, now)
 	local scan = (1 - S.wGuard) * calm * (1 - moveW * 0.7)
 	F.headYaw += scan * (0.28 * sin(now * 0.45 + S.seed) + 0.10 * sin(now * 1.3 + S.seed * 2))
 	F.headPitch += scan * 0.05 * sin(now * 0.7 + S.seed)
+
+	-- ===== segundo movimiento (follow-through) =====
+	-- Hombros, codos y cuello van detras del torso y rebotan: el golpe tiene inercia.
+	followThrough(S, F, dt, I)
 
 	applyPose(S, F)
 end
