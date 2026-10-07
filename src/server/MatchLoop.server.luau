@@ -86,13 +86,23 @@ local function spawnAI()
 	return model
 end
 
-local function clearAIFighters()
+-- Destruye SOLO el modelo de IA que se le pase. Con beforeEach (bug #6) es
+-- fundamental: si se limpian todas las IAs del contenedor, el task de la sesion
+-- vieja puede borrar el modelo que acaba de crear la sesion nueva.
+local function clearAIFighters(model)
 	local container = workspace:FindFirstChild("ActiveFighters")
-	if container then
-		for _, c in ipairs(container:GetChildren()) do
-			if c.Name == "AI_Fighter" then
-				c:Destroy()
-			end
+	if not container then
+		return
+	end
+	if model then
+		if model.Parent then
+			model:Destroy()
+		end
+		return
+	end
+	for _, c in ipairs(container:GetChildren()) do
+		if c.Name == "AI_Fighter" then
+			c:Destroy()
 		end
 	end
 end
@@ -114,6 +124,12 @@ local function runSoloFight(mySession)
 	if not waitForMatchEnd(mySession) then
 		return
 	end
+	-- bug #6: re-comprobar la sesion justo ANTES de crear la IA. Sin esta guarda,
+	-- un task viejo puede pasar el chequeo, crear su IA, y entrar en un combate
+	-- que ya es de la sesion nueva (que luego lo destruye con clearAIFighters).
+	if mySession ~= session then
+		return
+	end
 	local ai = spawnAI()
 	if not ai then
 		matchEvent:FireAllClients({ status = "ended", mode = "solo" })
@@ -124,7 +140,10 @@ local function runSoloFight(mySession)
 		{ kind = "player", player = player },
 		{ kind = "ai", model = ai, name = AI_NAME },
 	})
-	clearAIFighters()
+	-- bug #6: solo se destruye el modelo que creo ESTE task. Con clearAIFighters()
+	-- a secas, el task de la sesion vieja podia borrar la IA de la sesion nueva
+	-- en la ventana entre que match = nil y el spawn siguiente.
+	clearAIFighters(ai)
 	if mySession == session then
 		matchEvent:FireAllClients({ status = "ended", mode = "solo", winner = result and result.name or nil })
 	end

@@ -387,9 +387,14 @@ end
 
 local releaseHold -- declaración adelantada
 local stopBlock   -- declaración adelantada
+local dropHolds   -- declaración adelantada
 
 local function releaseFighter(e)
 	e.released = true
+	-- bug #4: soltar los agarres SIEMPRE. Si el combate termina con un agarre vivo,
+	-- holding/heldBy/holdToken se quedan en las entradas viejas y el task.delay del
+	-- lanzamiento (doGrab) puede dispararse despues contra el combate siguiente.
+	dropHolds(e)
 	stopBlock(e, false)
 	local char = charOf(e)
 	if e.kind == "player" and e.player and e.player.Parent then
@@ -446,7 +451,7 @@ function releaseHold(grabber, victim)
 end
 
 -- Suelta todo agarre en el que participe el luchador (como agarrador o como agarrado)
-local function dropHolds(e)
+dropHolds = function(e)
 	if e.holding then
 		local v = e.holding
 		e.holdToken = nil
@@ -689,6 +694,21 @@ local function targetsInCone(e, dir, range, minDot)
 	return list
 end
 
+-- ===== GENERACION DEL COMBATE (bug #5) =====
+-- Los callbacks pospuestos (task.delay / task.spawn / Heartbeat) se ejecutan
+-- DESPUES de que el combate haya cambiado. Si solo comprueban el global `match`,
+-- un golpe encolado en el combate A puede ejecutarse contra el combate B.
+--
+-- Solucion: cada entrada `e` recuerda en que combate se creo (`e.match`). Cualquier
+-- callback comprueba que sigue siendo el mismo combate Y que el luchador no fue
+-- liberado. Es la unica forma fiable de distinguir "el mismo combate" de "uno nuevo".
+--
+-- Se declara ANTES de tickCharges y antes del Heartbeat del modulo: en Luau, una
+-- referencia a un local que aun no existe captura nil (y luego "attempt to call").
+local function sameMatch(e, m)
+	return match ~= nil and match == m and e ~= nil and e.match == m and not e.released
+end
+
 -- ===== Embestidas en curso =====
 -- Las embestidas se resuelven en el Heartbeat del modulo (una comprobacion por frame) en vez de
 -- con un bucle propio de task.wait: asi el impacto se evalua una vez por frame y sin despertares
@@ -718,7 +738,8 @@ local function tickCharges()
 	local now = os.clock()
 	for _, c in ipairs(activeCharges) do
 		local done = false
-		if now >= c.tEnd or not match or not match.fighting or c.entry.released
+		-- sameMatch: la embestida se cancela si el combate ya no es el suyo (bug #5)
+		if now >= c.tEnd or not sameMatch(c.entry, c.m) or not match.fighting
 			or not isAlive(c.entry) or c.entry.out then
 			-- Se acabo el tiempo o el combate: la embestida termina sin resultado.
 			done = true
@@ -745,17 +766,21 @@ local function tickCharges()
 	activeCharges = keep
 end
 
-local function canKeepActing(e)
+local function canKeepActing(e, m)
 	local t = os.clock()
-	return match and match.fighting and isAlive(e) and not e.out and t >= e.stunUntil and t >= e.dazedUntil
+	return sameMatch(e, m) and match.fighting and isAlive(e) and not e.out
+		and t >= e.stunUntil and t >= e.dazedUntil
 end
 
 local function doPush(e, dir, counter)
 	local def = CFG.Push
 	local char = charOf(e)
 	setAct(char, "push")
+	-- m = combate actual. El windup se encola: si el combate cambia antes de que
+	-- salte, canKeepActing(e, m) lo cancela (bug #5).
+	local m = match
 	task.delay(def.Windup, function()
-		if not canKeepActing(e) then
+		if not canKeepActing(e, m) then
 			return -- te derribaron o aturdieron durante el golpe: se cancela
 		end
 		local _, _, root = partsOf(e)
@@ -787,7 +812,7 @@ local function doCharge(e, dir)
 	-- El resto de la embestida lo lleva tickCharges() desde el Heartbeat del modulo.
 	local t0 = os.clock()
 	activeCharges[#activeCharges + 1] = {
-		char = char, entry = e, dir = dir, def = def,
+		char = char, entry = e, dir = dir, def = def, m = match, -- bug #5
 		tCheck = t0 + 0.03, tEnd = t0 + def.Duration, result = nil,
 	}
 end
@@ -796,8 +821,9 @@ local function doGrab(e, dir)
 	local def = CFG.Grab
 	local char = charOf(e)
 	setAct(char, "grab")
+	local m = match -- bug #5: ambos callbacks comparan contra este combate
 	task.delay(def.Windup, function()
-		if not canKeepActing(e) then
+		if not canKeepActing(e, m) then
 			return
 		end
 		local t = os.clock()
@@ -840,12 +866,17 @@ local function doGrab(e, dir)
 		local token = {}
 		e.holdToken = token
 		task.delay(def.Hold, function()
+			-- El token caduca si el agarre se solto. El guard de combate evita que el
+			-- lanzamiento de un agarre del combate A golpee en el combate B (bug #5).
 			if e.holdToken ~= token or e.holding ~= v then
 				return -- contraatacado o cancelado
 			end
+			if not sameMatch(e, m) then
+				return -- el combate cambio mientras sujetaba: nada que lanzar
+			end
 			e.holdToken = nil
 			releaseHold(e, v)
-			if match and match.fighting and isAlive(e) and isAlive(v) and not e.out and not v.out then
+			if match.fighting and isAlive(e) and isAlive(v) and not e.out and not v.out then
 				local echar = charOf(e)
 				if echar then
 					setAct(echar, "throw")
@@ -1178,8 +1209,9 @@ function startAI(e)
 			return e.ai.face
 		end,
 	})
+	local m = match -- bug #5/#7: el bucle muere tambien si el combate ya no es el suyo
 	task.spawn(function()
-		while match and match.active and not e.released do
+		while sameMatch(e, m) and match.active do
 			task.wait(0.1)
 			local ok, err = pcall(aiThink, e)
 			if not ok then
@@ -1351,6 +1383,11 @@ local function runMatchBody(defs)
 
 	local m = { fighters = fighters, active = true, fighting = false, round = 0 }
 	match = m
+	-- Cada entrada recuerda su combate (bug #5): los callbacks pospuestos comparan
+	-- contra esta referencia en vez de fiarse solo del global `match`.
+	for _, e in ipairs(fighters) do
+		e.match = m
+	end
 	local participants = {}
 	for _, e in ipairs(fighters) do
 		participants[#participants + 1] = e
