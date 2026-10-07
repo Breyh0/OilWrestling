@@ -26,6 +26,14 @@ Juego de lucha en aceite en Roblox: empuja al rival fuera del ring (ring-out). P
 4. Programar con `rojo serve` corriendo + plugin de Rojo conectado en Studio.
 5. Los cambios de escena se guardan en Roblox normal (Team Create).
 
+### Anti-conflictos (equipo)
+
+1. **Flujo**: `git pull` → `Connect` (Rojo) → trabajar → `commit` + `push`. Nunca sincronizar Rojo con cambios locales sin pushear: tus archivos pisarían en el place lo que el otro ya hizo.
+2. **El código se escribe en `src/`** — ni a mano ni con la IA *dentro* de Studio (ni vía MCP `multi_edit`): la siguiente sincronización lo sobrescribiría **sin aviso**. Lo sí válido: tu IA edita los archivos directamente (conectarán al instante en Studio si el plugin está conectado) y usa el MCP para **leer** el place, ejecutar Luau y trabajar la escena.
+3. **Si `git push` rechaza** → `git pull`, resolver el merge (las IAs ayudan con el diff). Es el flujo normal, no pasa nada.
+4. **Error "session lock" de Rojo** → otra persona tiene el place sincronizado: avisar al otro y desconectar. Ambos sincronizando con archivos idénticos es inocuo (el sync es idempotente); con archivos divergidos, no.
+5. **Escena/GUI = solo Studio** (Team Create los fusiona en vivo). Código = solo archivos.
+
 ## Comandos
 
 ```sh

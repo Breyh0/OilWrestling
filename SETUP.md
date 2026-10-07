@@ -43,6 +43,8 @@ git config --global user.email "tu@email"
 
 4. Verifica desde tu IA: listar los estudios conectados debe devolver el place "Lucha de aceite".
 
+> 🧠 **Cómo trabaja tu IA con este repo**: que **escriba el código en los archivos `src/`** (Rojo lo refleja al instante en Studio) y que use el MCP para **leer** el place, ejecutar Luau y editar escena/GUI. Nunca escribas scripts del place vía MCP o editor de Studio: la próxima sincronización los pisa. Detalle en README → *Anti-conflictos*.
+
 ## 5. Reglas del equipo (resumen)
 
 1. `git pull` antes de empezar · `git push` al terminar.
