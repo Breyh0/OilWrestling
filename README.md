@@ -29,11 +29,13 @@ Juego de lucha en aceite en Roblox: empuja al rival fuera del ring (ring-out). P
 ## Comandos
 
 ```sh
-rojo serve                              # mantener abierto mientras se programa
+rojo serve                              # o: doble clic en iniciar-rojo.bat
 git pull                                # traer cambios del compañero
 git add -A && git commit -m "qué hice"  # registrar
 git push                                # compartir
 ```
+
+> ⚠️ `rojo serve` **no es un servicio automático**: es una ventana de terminal que debe estar abierta mientras se programa, y el plugin de Studio solo se conecta a ella. Si Studio dice *"Couldn't connect to the Rojo server"* → el serve no está corriendo: abre `iniciar-rojo.bat` y vuelve a pulsar **Connect** en Studio.
 
 ## Primera vez aquí
 

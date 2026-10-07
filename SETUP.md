@@ -17,6 +17,7 @@ git config --global user.email "tu@email"
 2. Extrae `rojo.exe` a una carpeta que esté en el PATH (ej. `C:\dev\bin`).
 3. Verifica: `rojo --version`
 4. Instala el plugin de Studio (una sola vez): `rojo plugin install`
+5. **En el día a día**: doble clic en **`iniciar-rojo.bat`** (raíz del repo) — equivale a `rojo serve` y deja la ventana lista. Mantenerla abierta mientras se programa.
 
 ## 3. Roblox Studio
 
