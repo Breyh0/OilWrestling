@@ -3,8 +3,7 @@
 Juego de lucha en aceite en Roblox: empuja al rival fuera del ring (ring-out). Primero en llegar a **3 puntos** gana. Modos: **solitario** (vs IA) y **multijugador** (hasta 4).
 
 - **Place**: placeId `76883498915584` · Universe `10769662284`
-- **Propietario**: BrendaRichard38 — place compartido por **Team Create**
-- **Equipo**: Breyh0 + BrendaRichard38, cada uno desde su PC con su propia IA conectada por Studio MCP
+- **Equipo**: Breyh0 + , cada uno desde su PC con su propia IA conectada por Studio MCP
 
 ## Estructura del repo
 
