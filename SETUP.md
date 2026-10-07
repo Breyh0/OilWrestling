@@ -5,7 +5,7 @@ Requisitos: Windows 10+, **Roblox Studio** actualizado, **git**, y tu IA (**open
 ## 1. Clone el repo
 
 ```sh
-git clone <URL_DEL_REPO_EN_GITHUB> C:\dev\LuchaDeAceite
+git clone https://github.com/Breyh0/OilWrestling.git C:\dev\LuchaDeAceite
 cd C:\dev\LuchaDeAceite
 git config --global user.name  "TuNombre"
 git config --global user.email "tu@email"
