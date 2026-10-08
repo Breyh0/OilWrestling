@@ -24,6 +24,8 @@ local splashMod = ReplicatedStorage:WaitForChild("OilSplash", 10)
 local OilSplash = splashMod and require(splashMod)
 local physicsMod = ReplicatedStorage:WaitForChild("OilPhysics", 10)
 local OilPhysics = physicsMod and require(physicsMod)
+local cfgMod = ReplicatedStorage:WaitForChild("OilConfig", 10)
+local SLIDE = (cfgMod and require(cfgMod).SlideBoost) or 1 -- cuanto resbala el suelo (OilConfig.SlideBoost)
 
 local CONFIG = {
 	Intensity = 1.0,       -- 0.6 = mas sutil | 1.4 = mas exagerado (marcha y movimientos sutiles)
@@ -639,7 +641,7 @@ local function step(S, dt, now)
 	local tg = {
 		sit = hum.Sit and 1 or 0,
 		air = (not S.grounded and S.airT > 0.08 and not knockedState) and 1 or 0,
-		skid = inMatch and S.grounded and clamp(-S.accel / 14, 0, 1) * smooth01((spd - 5) / 6) or 0,
+		skid = inMatch and S.grounded and clamp(-S.accel / (14 / SLIDE), 0, 1) * smooth01((spd - 5) / 6) or 0,
 		slip = inMatch and S.grounded and smooth01((spd - 6) / 8) * clamp(abs(S.yawRate) / 4.5, 0, 1) or 0,
 		locked = (char:GetAttribute("Locked") == true and not held) and 1 or 0,
 		blocking = (blocking and not held) and 1 or 0,
@@ -779,7 +781,7 @@ local function step(S, dt, now)
 		local dir = (S.vf < -0.35 * spd) and -1 or 1
 		S.phase = (S.phase + dir * dt * TAU * clamp(spd / 6.2, 0.6, 5)) % TAU
 	end
-	local glide = clamp(-S.accel / 14, 0, 1) * (inMatch and 1 or 0)
+	local glide = clamp(-S.accel / (14 / SLIDE), 0, 1) * (inMatch and 1 or 0)
 	local g = moveW * calm * (1 - 0.7 * glide) * I
 	if g > 0.002 then
 		local n = S.n

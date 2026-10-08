@@ -324,7 +324,7 @@ end
 
 function M.step(dt)
 	local now = os.clock()
-	local slick = workspace:GetAttribute("OilSlick") or 1
+	local slick = (workspace:GetAttribute("OilSlick") or 1) * (CFG.SlideBoost or 1)
 	for char, st in pairs(states) do
 		if not (char.Parent and st.hum.Parent and st.root.Parent) then
 			states[char] = nil
