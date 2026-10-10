@@ -10,21 +10,62 @@ Juego de lucha en aceite en Roblox: empuja al rival fuera del ring (ring-out). P
 
 | Carpeta | Rojo la sincroniza hacia | Contenido |
 |---|---|---|
-| `src/server/` | ServerScriptService | MatchLoop, OilCombat, PushServer, progresión |
-| `src/shared/` | ReplicatedStorage | OilConfig, OilPhysics, OilControls, ProgressionShared + RemoteEvents |
-| `src/client/` | StarterPlayerScripts | input, HUDs, menús, loading |
-| `src/character/` | StarterCharacterScripts | FightIdle, PushClient |
-| `docs/MEMORY.md` | — | **Memoria del proyecto: leer antes de tocar nada** |
+| `src/server/` | ServerScriptService | `MatchLoop`, `OilCombat`, `ProgressionService/Logic/System` + tests |
+| `src/shared/` | ReplicatedStorage | `OilConfig`, `OilPhysics`, `OilControls`, `OilSplash`, `ProgressionShared` + RemoteEvents |
+| `src/client/` | StarterPlayerScripts | input, HUDs, menús, `CharacterAnimator`, `SoundDirector` |
+| `src/character/` | StarterCharacterScripts | `Animate` (stub que sustituye al de Studio) |
+| `docs/` | — | **Empieza por `docs/WORKFLOW.md`** |
 
 `StarterGui` (los ScreenGuis con sus frames) **no** lo gestiona Rojo: la UI se edita en Studio.
 
+## Cómo se trabaja aquí
+
+> `main` es la versión que **funciona**. Todo lo demás vive en una rama hasta que se ha
+> probado de verdad. Si `main` está verde, se puede volver a ella en un segundo.
+
+```sh
+git checkout main && git pull
+git checkout -b feature/<que-hace>
+# ... trabajar: código en src/, escena en Studio ...
+
+python tools\lua_preflight.py src docs .opencode   # puerta obligatoria
+python tools\preflight_selftest.py                 # si tocaste el preflight
+git add -A && git commit -m "qué y por qué" && git push
+```
+
+Antes de mergear a `main`: preflight limpio, **46/46 tests** en playtest, **0 errores de
+consola**, una partida jugada de principio a fin y el visto bueno del usuario.
+
+**El método completo está en [`docs/WORKFLOW.md`](docs/WORKFLOW.md).**
+
+### Documentos
+
+| Documento | Para qué |
+|---|---|
+| [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | **El método.** Ciclo, puertas, ramas, code review |
+| [`docs/MEMORY.md`](docs/MEMORY.md) | **Fuente de verdad.** Gotchas, estado, reglas del equipo |
+| [`docs/DATOS.md`](docs/DATOS.md) | Cómo tocar los datos del jugador sin romperlos |
+| [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) | Qué caza el preflight y de qué bug salió cada regla |
+| [`docs/OILCOMBAT.md`](docs/OILCOMBAT.md) | Mapa técnico del combate |
+| [`CHANGELOG.md`](CHANGELOG.md) | Qué se publica en cada versión |
+
+### Skills (para las IAs del equipo)
+
+| Skill | Cuándo |
+|---|---|
+| `lucha-workflow` | Siempre. Reglas duras y anti-conflicto |
+| `lucha-qa` | Antes de dar algo por bueno. El playtest es el único veredicto |
+| `lucha-ramas` | Al crear una rama, al mergear, al deshacer |
+| `lucha-revision` | Al revisar trabajo ajeno antes de que entre al repo |
+| `lucha-feature` | Al añadir un sistema nuevo de principio a fin |
+
 ## Reglas del equipo
 
-1. **`git pull` antes de empezar** · `git push` al terminar — nada de cambios locales olvidados.
-2. **Código → solo en archivos** (editor o tu IA). Nunca en el editor de scripts de Studio: Rojo lo pisa.
-3. **Escena y GUI → solo en Studio** (modelos, terreno, frames). git no fusiona el `.rbxl`.
-4. Programar con `rojo serve` corriendo + plugin de Rojo conectado en Studio.
-5. Los cambios de escena se guardan en Roblox normal (Team Create).
+1. **Una rama por tarea.** `main` solo recibe lo verificado.
+2. **`git pull` antes de empezar** · `git push` al terminar.
+3. **Código → solo en archivos `src/`**. Nunca en el editor de scripts de Studio: Rojo lo pisa sin aviso.
+4. **Escena y GUI → solo en Studio**, y **publicar el place**: git no las guarda.
+5. **Puerta antes de commitear**: preflight limpio. Antes de mergear: 46/46 tests y 0 errores de consola.
 
 ### Anti-conflictos (equipo)
 
@@ -47,4 +88,6 @@ git push                                # compartir
 
 ## Primera vez aquí
 
-→ [SETUP.md](SETUP.md) para instalar todo, → [docs/MEMORY.md](docs/MEMORY.md) para entender el proyecto.
+1. [`docs/WORKFLOW.md`](docs/WORKFLOW.md) — el método. Esto primero.
+2. [`SETUP.md`](SETUP.md) — instalar Rojo y conectar Studio.
+3. [`docs/MEMORY.md`](docs/MEMORY.md) — gotchas y estado del proyecto.

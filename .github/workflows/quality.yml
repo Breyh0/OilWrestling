@@ -1,0 +1,64 @@
+name: quality
+
+# La puerta de calidad. Corre en cada push y en cada PR a main.
+# Lo que SI puede comprobar un servidor: que el preflight pasa y que sus propias
+# reglas siguen detectando los fallos para los que existen.
+#
+# Lo que NO puede: los 46 tests de Luau (necesitan Roblox) ni el playtest. Eso
+# sigue siendo manual y es la parte que hace el usuario. La CI no sustituye al
+# playtest, solo evita que llegue a el un error tonto.
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  preflight:
+    name: Preflight de Luau y documentación
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Preflight (código, docs y skills)
+        run: python tools/lua_preflight.py src docs .opencode
+
+      - name: Autotests del propio preflight
+        run: python tools/preflight_selftest.py
+
+  hygiene:
+    name: Higiene del repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Nada de binarios ni artefactos
+        run: |
+          if git ls-files | grep -Ei '\.(pyc|rbxlx?|png|jpg|wav|mp3)$'; then
+            echo "::error::Hay binarios versionados. Los .pyc se generan solos; los assets van en el place."
+            exit 1
+          fi
+          echo "OK"
+
+      - name: El preflight no debe tener fallos pendientes
+        run: python tools/lua_preflight.py src docs .opencode
+
+      - name: Los tests de preflight no deben estar rotos
+        run: python tools/preflight_selftest.py
+
+  avisa:
+    name: Lo que la CI no puede comprobar
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Recordatorio
+        run: |
+          echo "::notice title=La CI no juega::La CI comprueba sintaxis y reglas, no el juego."
+          echo "Antes de mergear a main hacen falta: 46/46 tests de Luau en playtest, 0 errores de"
+          echo "consola, una partida jugada de principio a fin y el visto bueno del usuario."

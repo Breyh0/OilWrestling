@@ -109,12 +109,20 @@ Método completo en `docs/WORKFLOW.md`; skill operativa en `.opencode/skills/luc
 |---|---|
 | `docs/MEMORY.md` | **Fuente de verdad.** Gotchas, estado, reglas del equipo |
 | `docs/WORKFLOW.md` | Método de trabajo: ciclo, puerta de calidad, ramas, code review |
+| `docs/DATOS.md` | Contrato de datos del jugador: los 4 toques, esquema y migraciones |
 | `docs/OILCOMBAT.md` | Mapa técnico del combate |
 | `docs/PREFLIGHT.md` | Reglas del preflight de Luau y sus autotests |
+| `CHANGELOG.md` | Qué se publica en cada versión |
 | `checkpoint/2026-10-10-estado-del-lugar/` | Trabajo del compañero rescatado del place, con hashes |
 
 Skills: `lucha-workflow` (reglas duras), `lucha-qa` (verificación), `lucha-ramas`
-(ramas y merges), `lucha-revision` (revisar cambios antes de que entren).
+(ramas y merges), `lucha-revision` (revisar cambios antes de que entren), `lucha-feature`
+(añadir un sistema nuevo de principio a fin).
+
+Puerta automática: `.github/workflows/quality.yml` corre preflight + autotests en cada
+push y PR a `main`. **No sustituye al playtest**: los 46 tests de Luau necesitan Roblox y
+siguen siendo manuales. Para que sea puerta de verdad hay que proteger `main` en los
+ajustes del repo.
 
 Grafo de conocimiento en `graphify-out/` (local, gitignored). Actualizado el 2026-10-10:
 **494 nodos, 957 aristas, 40 comunidades**. Se refresca con `/graphify . --update`.

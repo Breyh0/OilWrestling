@@ -305,10 +305,15 @@ def main():
     except Exception:
         pass
 
+    # Carpetas que se saltan siempre: los archivos de prueba del propio preflight
+    # están rota a proposito, y graphify-out es generado.
+    SALTAR = {"graphify-out", ".git", "__pycache__", "preflight_tests", ".github"}
+
     objetivos = []
     for arg in sys.argv[1:]:
         if os.path.isdir(arg):
-            for raiz, _, archivos in os.walk(arg):
+            for raiz, dirs, archivos in os.walk(arg):
+                dirs[:] = [d for d in dirs if d not in SALTAR]
                 for a in archivos:
                     # .luau: todas las reglas. .md: solo la de alfabeto (docs y skills).
                     if a.endswith(".luau") or a.endswith(".md"):

@@ -137,7 +137,7 @@ Los cinco puntos donde de verdad se rompen cosas en este proyecto:
 - [ ] ¿Añade `require` de algo que no existe? Rompe el arranque del juego.
 - [ ] ¿Trae un remoto nuevo? Tiene que estar en `src/shared/` como `.model.json`.
 - [ ] ¿Deja números mágicos? El balance va en `OilConfig`, nunca repartido.
-- [ ] ¿Borró código? Un `require` hacia algo eliminado deja el script Calling a nil.
+- [ ] ¿Borró código? Un `require` hacia algo eliminado deja el script calling a nil.
 
 ---
 
@@ -150,6 +150,26 @@ Los cinco puntos donde de verdad se rompen cosas en este proyecto:
 - Nunca se edita en `main`. Si se ha hecho, se puede recuperar, pero se ha gastado la red.
 - Los cambios de **escena** (ring, GUI) no los protege ninguna rama: se publica el place
   y se anota en `MEMORY.md` que hay cambios de escena sin commit.
+
+### La puerta automática
+
+Hay una CI en `.github/workflows/quality.yml` que corre en cada push y en cada PR a
+`main`, y ejecuta el preflight y sus autotests. Es una red, no una garantía:
+
+- **La CI no juega.** Los 46 tests de Luau necesitan Roblox, así que siguen siendo
+  manuales. Tampoco comprueba cómo suena ni cómo se ve nada.
+- Lo que la CI sí evita es que un error tonto llegue al playtest.
+
+Para que sea una puerta de verdad hay que **proteger `main`** en los ajustes del repo
+(Settings → Branches → Add rule): exigir pull request y que la CI pase antes de mergear.
+Sin eso, la puerta depende de que nadie tenga prisa.
+
+### Publicar una versión
+
+1. Rama verificada → merge a `main` con `--no-ff`.
+2. **Publicar el place** en Studio. Sin esto, la escena no existe para nadie más.
+3. `git tag -a v0.5.0 -m "..." && git push --tags`
+4. Una línea en `CHANGELOG.md`, escrita desde el punto de vista de quien juega.
 
 ---
 
@@ -177,8 +197,10 @@ Aunque sea un carácter: `main` es la red.
 |---|---|---|
 | `docs/MEMORY.md` | **Fuente de verdad.** Gotchas, estado, reglas del equipo | En cada merge |
 | `docs/WORKFLOW.md` | Este documento | Cuando cambia el método |
+| `docs/DATOS.md` | Contrato de los datos del jugador (4 toques, esquema, migraciones) | Cuando se toca la progresión |
 | `docs/OILCOMBAT.md` | Mapa técnico del combate | Cuando se toca el núcleo |
 | `docs/PREFLIGHT.md` | Reglas del preflight y sus autotests | Cuando se añade una regla |
+| `CHANGELOG.md` | Qué se publica en cada versión | Al publicar |
 | `checkpoint/` | Trabajo a medias rescatado del place | Cuando hay trabajo sin versionar |
 
 `MEMORY.md` es lo primero que lee cualquiera que llegue. Si un bug no está anotado ahí,
