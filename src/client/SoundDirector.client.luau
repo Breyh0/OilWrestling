@@ -81,7 +81,11 @@ local FX = {
 		{ path = "SFXGroup/Combate/SplashSlip", gain = 1.0, cooldown = 0.40, prio = IMPORTANTE, hold = 0.6, duck = 0.55, duckFor = 0.9 },
 	},
 	victory = {
-		{ path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 1.0, prio = PROTAGONISTA, hold = 3.2, duck = 0.35, duckFor = 3.2 },
+		-- hold de 6 s a proposito: el servidor anuncia el final una vez por segundo
+		-- ("Lobby en 5s", "Lobby en 4s"...) durante 5 s. Con 3.2 s entraba una segunda
+		-- fanfarria encima de la primera y sonaba como un bucle roto. Ademas la
+		-- fanfarria dura mas de 10 s, asi que se nota mucho.
+		{ path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 6.0, prio = PROTAGONISTA, hold = 6.0, duck = 0.35, duckFor = 3.2 },
 	},
 	-- grab, guardbreak y break se quedan sin sonido a proposito: la biblioteca no tiene
 	-- uno que encaje y no queremos meter ruido de mas. El bloqueo ya suena con PushSound
@@ -272,9 +276,11 @@ local function fire(entry, pos)
 		s.Ended:Once(function()
 			s:Destroy()
 		end)
-		-- red de seguridad por si Ended no llega (sonido cortado, cierre de partida...)
-		Debris:AddItem(s, 30)
 	end
+	-- Red de seguridad para CUALQUIER clon, tambien los que amenacen a sonar: sin Parent
+	-- bien puesto o con un asset rarazo, el Ended podria no llegar nunca. 40 s es mas
+	-- que la fanfarria mas larga de la biblioteca.
+	Debris:AddItem(s, 40)
 
 	if entry.duck then
 		duckMusic(entry.duck, entry.duckFor)
@@ -311,8 +317,17 @@ end
 
 local eventRemote = ReplicatedStorage:WaitForChild("OilEvent")
 
+-- El servidor anuncia el final del combate UNA VEZ POR SEGUNDO durante 5 s
+-- ("Lobby en 5s", "Lobby en 4s"...). Sin este cerrojo, cada anuncio dispara una
+-- fanfarria y como la fanfarria dura mas de 10 s se solapan: suena como un bucle roto.
+-- Se reinicia con match_start, o sea una fanfarria por combate y ninguna mas.
+local finalCantado = false
+
 eventRemote.OnClientEvent:Connect(function(kind, a, b, c)
 	if kind == "fx" then
+		if a == "victory" and finalCantado then
+			return
+		end
 		local sounds = FX[a]
 		if not sounds then
 			return
@@ -345,11 +360,20 @@ eventRemote.OnClientEvent:Connect(function(kind, a, b, c)
 	elseif kind == "noscore" then
 		-- caida sin punto: el golpe ya suena por su cuenta, aqui no se anade nada
 	elseif kind == "match_start" then
+		finalCantado = false
 		fire(UI.matchStart)
 	elseif kind == "match_end" then
 		-- a es el nombre del ganador; si no hay, se empato
+		if finalCantado then
+			return
+		end
+		finalCantado = true
 		fire(a and UI.victory or UI.draw)
 	elseif kind == "draw" then
+		if finalCantado then
+			return
+		end
+		finalCantado = true
 		fire(UI.draw)
 	end
 end)
@@ -411,6 +435,61 @@ local function applyPlace()
 	local inMatch = player:GetAttribute("InOilMatch") == true
 	setMusic(inMatch and "battle" or "lobby")
 	setAmbience(not inMatch)
+end
+
+-- ============================================================================
+-- Al volver al menu: silencio
+-- ============================================================================
+-- La fanfarria de victoria dura mas de 10 s y el rugido del publico puede durar
+-- 5 s. Si el jugador vuelve al menu mientras suenan, se quedan sonando encima de
+-- la musica del lobby, que es justo lo que mas molesta. Al abrir el menu se bajan
+-- y se van; la musica y el ambiente se respetan porque son bucles propios.
+
+local function silenciarEfectos()
+	local function bajar(d)
+		if not d.Parent then
+			return
+		end
+		fadeTo(d, 0, 0.4)
+		task.delay(0.55, function()
+			if d.Parent then
+				d:Destroy()
+			end
+		end)
+	end
+
+	-- 3D: cuelgan de un Attachment en workspace, hay que llevarse tambien el ancla
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" then
+			local ancla = d.Parent
+			bajar(d)
+			task.delay(0.7, function()
+				if ancla and ancla:IsA("Attachment") and ancla.Parent then
+					ancla:Destroy()
+				end
+			end)
+		end
+	end
+
+	-- 2D en SoundService, dejando intactos los bucles de musica y ambiente
+	for _, d in ipairs(SoundService:GetDescendants()) do
+		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" and d ~= music.lobby and d ~= music.battle and d ~= ambience then
+			bajar(d)
+		end
+	end
+
+	if DEBUG then
+		print("[SoundDirector] efectos silenciados al abrir el menu")
+	end
+end
+
+local menu = player:WaitForChild("PlayerGui"):WaitForChild("MainMenu")
+if menu then
+	menu:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if menu.Enabled then
+			silenciarEfectos()
+		end
+	end)
 end
 
 -- Antes de mirar el atributo: se crean los dos loops de musica. Si el jugador ya estaba en
