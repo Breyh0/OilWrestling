@@ -13,7 +13,17 @@
 -- Reglas que sigue:
 --   - Sin timeouts en WaitForChild (provocan la carga congelada; ver MEMORY.md).
 --   - Si un sonido no esta, se salta en silencio: nunca bloquea ni da error.
---   - No se tocan los volumenes que ya estan puestos en SoundService.
+--   - No se tocan los volumenes de SoundService: todo el ajuste se hace aqui, en copia.
+--
+-- Mezcla (lo importante de este archivo):
+--   - Cada sonido tiene prioridad. Las piezas protagonistas (cuenta atras, silbato,
+--     victoria) no se pierden nunca: bajan la musica y apartan a las demas.
+--   - Las piezas importantes (publico, caida) suenan solas: si ya hay una sonando, no se
+--     suma otra encima. Antes al ganar sonaban tres a la vez (salpicadura + publico +
+--     victoria) porque el remate no|birth ningun sitio.
+--   - La musica se atenua sola mientras suena una pieza y vuelve sola despues. Asi el
+--     beep de la cuenta atras se oye sin tener que subir su volumen a tope.
+--   - El fondo (esquivar, embestir) nunca entra en la cola de prioridades.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,36 +31,56 @@ local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
-local DEBUG = false -- poner a true para ver que sonido suena en la consola
+local DEBUG = false -- poner a true para ver que suena en la consola
 
 local player = Players.LocalPlayer
 
 -- ============================================================================
+-- Prioridades
+-- ============================================================================
+local FONDO = 1 -- puede sonar encima de otra cosa sin molestar
+local IMPORTANTE = 2 -- no se suma a otra importante
+local PROTAGONISTA = 3 -- manda: silencia a las demas mientras dure
+
+-- ============================================================================
 -- Mapa de sonidos
 -- ============================================================================
--- Cada entrada: { ruta dentro de SoundService, ganancia, espera minima entre repeticiones }
--- La ganancia se aplica sobre el volumen que ya tiene el sonido; no se toca el original.
+-- path       ruta dentro de SoundService
+-- gain       ganancia sobre el volumen que ya trae el sonido
+-- cooldown   segundos minimos entre dos disparos del MISMO sonido
+-- prio       de las constantes de arriba
+-- hold       segundos que este sonido "ocupa" la pista de los importantes
+-- duck       cuanto baja la musica mientras suena (1 = no baja)
+-- duckFor    segundos que dura esa bajada
 
 local FX = {
-	-- eventos "fx" del combate (los emite OilCombat con fx("kind", pos, dir, force))
-	dodge = { { "SFXGroup/Combate/DodgeSound", 1.0, 0.12 } },
-	dash = { { "SFXGroup/Combate/ChargeSound", 0.9, 0.25 } },
+	-- eventos "fx" del combate (OilCombat los manda con fx(tipo, pos, dir, fuerza);
+	-- en el cliente llegan como "fx", a=tipo, b=posicion)
+	dodge = { { path = "SFXGroup/Combate/DodgeSound", gain = 0.95, cooldown = 0.15, prio = FONDO } },
+	dash = { { path = "SFXGroup/Combate/ChargeSound", gain = 0.85, cooldown = 0.30, prio = FONDO } },
 	ringout = {
-		{ "SFXGroup/Combate/SplashSlip", 1.0, 0.30 },
-		{ "SFXGroup/Combate/CrowdCheer", 0.85, 0.30 },
+		-- solo la salpicadura: el publico entra despues con el "point" si el punto cuenta.
+		-- Antes sonaban las dos a la vez y, si era el punto de victoria, se sumaba el
+		-- Rugido de Gladiador encima: tres sonidos pisandose.
+		-- hold corto a proposito: el rugido del "point" tiene que poder entrar justo
+		-- despues de la salpicadura, no quedarse esperando.
+		{ path = "SFXGroup/Combate/SplashSlip", gain = 1.0, cooldown = 0.40, prio = IMPORTANTE, hold = 0.6, duck = 0.55, duckFor = 0.9 },
 	},
-	victory = { { "SFXGroup/Resultado/VictorySound", 1.0, 0.50 } },
-	-- block, parry, grab, guardbreak y break se quedan sin sonido a proposito: la biblioteca
-	-- no tiene uno que encaje y no queremos meter ruido de mas.
+	victory = {
+		{ path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 1.0, prio = PROTAGONISTA, hold = 3.2, duck = 0.35, duckFor = 3.2 },
+	},
+	-- block, parry, grab, guardbreak y break se quedan sin sonido a proposito: la
+	-- biblioteca no tiene uno que encaje y no queremos meter ruido de mas.
 }
 
 local UI = {
-	countdown = { "SFXGroup/Ronda/CountdownBeep", 1.0, 0.20 },
-	go = { "SFXGroup/Ronda/WhistleGong", 1.0, 0.50 },
-	point = { "SFXGroup/Combate/CrowdCheer", 0.9, 0.50 },
-	matchStart = { "SFXGroup/Combate/CrowdCheer", 0.8, 1.00 },
-	victory = { "SFXGroup/Resultado/VictorySound", 1.0, 1.00 },
-	draw = { "SFXGroup/Combate/CrowdCheer", 0.7, 1.00 },
+	-- la cuenta atras va 3, 2, 1: pitan los ultimos tres, subiendo de volumen
+	countdown = { path = "SFXGroup/Ronda/CountdownBeep", gain = 1.5, cooldown = 0.20, prio = PROTAGONISTA, hold = 0.55, duck = 0.20, duckFor = 1.1 },
+	go = { path = "SFXGroup/Ronda/WhistleGong", gain = 1.0, cooldown = 0.60, prio = PROTAGONISTA, hold = 1.3, duck = 0.25, duckFor = 1.3 },
+	point = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.85, cooldown = 0.80, prio = IMPORTANTE, hold = 1.1, duck = 0.70, duckFor = 1.1 },
+	matchStart = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.80, cooldown = 1.20, prio = IMPORTANTE, hold = 1.3, duck = 0.60, duckFor = 1.3 },
+	victory = { path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 1.20, prio = PROTAGONISTA, hold = 3.2, duck = 0.35, duckFor = 3.2 },
+	draw = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.70, cooldown = 1.20, prio = IMPORTANTE, hold = 1.2, duck = 0.70, duckFor = 1.2 },
 }
 
 -- ============================================================================
@@ -78,8 +108,7 @@ local function groupGain(sound)
 	return group and group.Volume or 1
 end
 
--- Cuando se pide el mismo sonido varias veces seguidas (un bloqueo en bucle, dos caidas
--- seguidas) se solaparian y saturarian. Cada sonido lleva su propio reloj.
+-- Reloj anti-solape por sonido: dos bloqueos seguidos del mismo tipo no se acumulan.
 local lastPlayed = {}
 local function throttled(path, cooldown)
 	local now = os.clock()
@@ -90,22 +119,123 @@ local function throttled(path, cooldown)
 	return true
 end
 
--- Reproduce un sonido suelto. Si se pasa pos, se reproduce en 3D desde ese punto del mundo.
-local function play(path, gain, cooldown, pos)
-	local template = resolve(path)
+local function warn(message)
+	warn("[SoundDirector] " .. message)
+end
+
+-- Va aqui, antes de la musica: si se declarara mas abajo, pushMusic la capturaria como
+-- nil y reventaria al cambiar de pista.
+local function fadeTo(sound, target, seconds)
+	if not sound then
+		return
+	end
+	TweenService:Create(sound, TweenInfo.new(seconds or 0.25, Enum.EasingStyle.Linear), { Volume = target }):Play()
+end
+
+-- ============================================================================
+-- Musica y su atenuacion
+-- ============================================================================
+-- El servidor ya pone el atributo InOilMatch (lo usan OilCombatHUD, OilRoundsHUD,
+-- OilWinnerCeremony y CharacterAnimator), asi que no hace falta pedir nada extra.
+--
+-- La musica de batalla suena por debajo de la de lobby a proposito: con las dos al mismo
+-- nivel, los golpes se perdian. El valor exacto de cada pista esta en MUSIC_GAIN.
+
+local MUSIC_GAIN = { lobby = 1.0, battle = 0.45 }
+
+local music = { lobby = nil, battle = nil, current = nil, lobbyVol = 0, battleVol = 0 }
+local mix = { duck = 1, duckUntil = 0, duckToken = 0 }
+
+local function musicBase()
+	if music.current == "battle" then
+		return music.battleVol
+	end
+	return music.lobbyVol
+end
+
+local function pushMusic(seconds)
+	local target = musicBase() * mix.duck
+	if music.current == "battle" then
+		fadeTo(music.battle, target, seconds)
+	else
+		fadeTo(music.lobby, target, seconds)
+	end
+end
+
+-- Baja la musica mientras suena una pieza y la devuelve sola al terminar. Si se encadenan
+-- varias bajadas, manda la ultima: el token invalida las anteriores.
+local function duckMusic(factor, seconds)
+	mix.duck = math.clamp(factor, 0, 1)
+	mix.duckUntil = os.clock() + (seconds or 1)
+	mix.duckToken += 1
+	local mine = mix.duckToken
+	pushMusic(0.12)
+	task.spawn(function()
+		while mix.duckToken == mine and os.clock() < mix.duckUntil do
+			task.wait(0.1)
+		end
+		if mix.duckToken == mine then
+			mix.duck = 1
+			pushMusic(0.6)
+		end
+	end)
+end
+
+-- ============================================================================
+-- La pista de los sonidos importantes
+-- ============================================================================
+-- Solo hay una plaza. Entra lo que sea mas importante que lo que ya esta sonando, y el
+-- resto espera: por eso al ganar ya no se pisan la salpicadura, el publico y la victoria.
+
+local lane = { prio = 0, until = 0 }
+
+local function mayPlay(prio)
+	if prio <= FONDO then
+		return true -- el fondo no ocupa plaza
+	end
+	local now = os.clock()
+	if now >= lane.until then
+		return true
+	end
+	return prio > lane.prio
+end
+
+local function claimLane(prio, seconds)
+	if prio <= FONDO then
+		return
+	end
+	lane.prio = prio
+	lane.until = os.clock() + (seconds or 1)
+end
+
+-- ============================================================================
+-- Reproduccion
+-- ============================================================================
+
+-- entry: { path, gain, cooldown, prio, hold, duck, duckFor }   pos: Vector3 o nil
+local function fire(entry, pos)
+	local template = resolve(entry.path)
 	if not template then
 		if DEBUG then
-			warn("[SoundDirector] no existe: " .. path)
+			warn("no existe: " .. entry.path)
 		end
 		return
 	end
-	if not throttled(path, cooldown) then
+	if not mayPlay(entry.prio) then
+		if DEBUG then
+			print(string.format("[SoundDirector] %s descartado (pista ocupada)", entry.path))
+		end
+		return
+	end
+	if not throttled(entry.path, entry.cooldown) then
 		return
 	end
 
+	claimLane(entry.prio, entry.hold)
+
 	local s = template:Clone()
 	s.Name = "SD_" .. template.Name
-	s.Volume = math.clamp(template.Volume * gain * groupGain(template), 0, 1)
+	s.Volume = math.clamp(template.Volume * entry.gain * groupGain(template), 0, 1)
 
 	if pos then
 		-- 3D: un Attachment en el workspace es lo que le da posicion al sonido
@@ -125,20 +255,23 @@ local function play(path, gain, cooldown, pos)
 		Debris:AddItem(s, 30)
 	end
 
+	if entry.duck then
+		duckMusic(entry.duck, entry.duckFor)
+	end
+
 	s:Play()
 	if DEBUG then
-		print(string.format("[SoundDirector] %s%s", s.Name, pos and " (3D)" or ""))
+		print(string.format("[SoundDirector] %s (prio %d%s)", s.Name, entry.prio, pos and " 3D" or ""))
 	end
 end
 
--- Igual que play() pero cuelga el clone DENTRO de su SoundGroup, para que el volumen del
--- grupo siga mandando. Para musica y ambiente, que no son 3D.
--- Devuelve el clone, o nil si el sonido no existe.
+-- Clone que cuelga DENTRO de su SoundGroup, para que el volumen del grupo siga mandando.
+-- Para musica y ambiente, que no son 3D. Devuelve el clone, o nil si el sonido no existe.
 local function playGrouped(path, gain, looped)
 	local template = resolve(path)
 	if not template then
 		if DEBUG then
-			warn("[SoundDirector] no existe: " .. path)
+			warn("no existe: " .. path)
 		end
 		return nil
 	end
@@ -149,13 +282,6 @@ local function playGrouped(path, gain, looped)
 	s.Parent = template:FindFirstAncestorWhichIsA("SoundGroup") or SoundService
 	s:Play()
 	return s
-end
-
-local function fadeTo(sound, target, seconds)
-	if not sound then
-		return
-	end
-	TweenService:Create(sound, TweenInfo.new(seconds, Enum.EasingStyle.Linear), { Volume = target }):Play()
 end
 
 -- ============================================================================
@@ -170,48 +296,50 @@ eventRemote.OnClientEvent:Connect(function(kind, a, b, c)
 		if not sounds then
 			return
 		end
-		-- El servidor manda FireAllClients("fx", kind, pos, dir, force): aqui a es el tipo
-		-- de efecto y b es la posicion. En el resto de eventos b no es una posicion, asi
-		-- que se comprueba el tipo antes de usarlo.
+		-- a es el tipo de efecto y b la posicion; en el resto de eventos b no es una
+		-- posicion, asi que se comprueba el tipo antes de usarlo.
 		local pos = (typeof(b) == "Vector3") and b or nil
 		for _, entry in ipairs(sounds) do
-			play(entry[1], entry[2], entry[3], pos)
+			fire(entry, pos)
 		end
 	elseif kind == "countdown" then
-		-- solo en los ultimos tres numeros, y algo mas fuerte cuanto mas cerca
+		-- el servidor cuenta 3, 2, 1: solo pitan los ultimos tres, cada vez mas fuerte
 		local n = tonumber(a) or 99
 		if n >= 1 and n <= 3 then
-			play(UI.countdown[1], UI.countdown[2] * (1.15 - 0.1 * n), UI.countdown[3])
+			local entry = UI.countdown
+			fire({
+				path = entry.path,
+				gain = entry.gain * (1.05 + 0.08 * (3 - n)),
+				cooldown = entry.cooldown,
+				prio = entry.prio,
+				hold = entry.hold,
+				duck = entry.duck,
+				duckFor = entry.duckFor,
+			})
 		end
 	elseif kind == "go" then
-		play(UI.go[1], UI.go[2], UI.go[3])
+		fire(UI.go)
 	elseif kind == "point" then
-		play(UI.point[1], UI.point[2], UI.point[3])
+		fire(UI.point)
 	elseif kind == "noscore" then
 		-- caida sin punto: el golpe ya suena por su cuenta, aqui no se anade nada
 	elseif kind == "match_start" then
-		play(UI.matchStart[1], UI.matchStart[2], UI.matchStart[3])
-	elseif kind == "match_end" or kind == "draw" then
-		-- a es el nombre del ganador (nil si hubo empate): con ganador suena la victoria
-		if kind == "match_end" and a == nil then
-			play(UI.draw[1], UI.draw[2], UI.draw[3])
-		else
-			play(UI.victory[1], UI.victory[2], UI.victory[3])
-		end
+		fire(UI.matchStart)
+	elseif kind == "match_end" then
+		-- a es el nombre del ganador; si no hay, se empato
+		fire(a and UI.victory or UI.draw)
+	elseif kind == "draw" then
+		fire(UI.draw)
 	end
 end)
 
 -- ============================================================================
--- Musica: lobby en reposo, batalla durante el combate
+-- Arranque de musica y ambiente
 -- ============================================================================
--- El servidor ya pone el atributo InOilMatch (lo usan OilCombatHUD, OilRoundsHUD,
--- OilWinnerCeremony y CharacterAnimator), asi que no hace falta pedir nada extra.
-
-local music = { lobby = nil, battle = nil, current = nil, lobbyVol = 0, battleVol = 0 }
 
 local function startMusic()
-	local lobby = playGrouped("MusicGroup/LobbyMusic", 1.0, true)
-	local battle = playGrouped("MusicGroup/BattleMusic", 1.0, true)
+	local lobby = playGrouped("MusicGroup/LobbyMusic", MUSIC_GAIN.lobby, true)
+	local battle = playGrouped("MusicGroup/BattleMusic", MUSIC_GAIN.battle, true)
 	music.lobby, music.battle = lobby, battle
 	music.lobbyVol = lobby and lobby.Volume or 0
 	music.battleVol = battle and battle.Volume or 0
@@ -222,21 +350,23 @@ local function startMusic()
 	if battle then
 		battle.Volume = 0
 	end
-	music.current = nil --Todavia no se ha elegido ninguna
+	music.current = nil -- Todavia no se ha elegido ninguna
 end
 
 local function setMusic(where)
 	if music.current == where then
 		return
 	end
+	-- La pista que se deja se baja a cero: si no, al entrar en partida siguen sonando
+	-- las dos musicas a la vez.
+	local from = music.current
 	music.current = where
-	if where == "battle" then
+	if from == "lobby" then
 		fadeTo(music.lobby, 0, 1.2)
-		fadeTo(music.battle, music.battleVol, 1.2)
-	else
+	elseif from == "battle" then
 		fadeTo(music.battle, 0, 1.2)
-		fadeTo(music.lobby, music.lobbyVol, 1.2)
 	end
+	pushMusic(1.2)
 	if DEBUG then
 		print("[SoundDirector] musica -> " .. where)
 	end
