@@ -250,9 +250,13 @@ local function fire(entry, pos)
 	s.Volume = math.clamp(template.Volume * entry.gain * groupGain(template), 0, 1)
 
 	if pos then
-		-- 3D: un Attachment en el workspace es lo que le da posicion al sonido
+		-- 3D: un Attachment en el workspace es lo que le da posicion al sonido.
+		-- IMPORTANTE: hay que colgar el ancla en el workspace. Un Attachment sin
+		-- parent esta fuera del DataModel: el sonido no suena y no aparece en ningun
+		-- GetDescendants(), y tampoco da error (asi se colaron los sonidos 3D).
 		local anchor = Instance.new("Attachment")
 		anchor.WorldPosition = pos
+		anchor.Parent = workspace
 		s.Parent = anchor
 		Debris:AddItem(anchor, 30)
 	else

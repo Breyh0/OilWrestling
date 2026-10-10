@@ -165,6 +165,43 @@ def rev_corchetes(masc):
     return fallos
 
 
+def rev_huerfanas(masc):
+    """Instance.new() asignado a un local al que nunca se le pone .Parent en NINGUN sitio.
+
+    Asi se colaron los sonidos 3D: el clon colgaba de un Attachment que nunca se
+    parento, asi que quedaba fuera del DataModel. Sin Parent no suena y no sale en
+    ningun GetDescendants(), y tampoco da error: el fallo es invisible.
+    Heuristica: si otro local del mismo nombre recibe .Parent en el archivo, no se
+    avisa (falso negativo posible; a cambio no llora con el codigo normal).
+    """
+    texto = "\n".join(masc)
+    fallos = []
+    vistos = set()
+    for num, ln in enumerate(masc, start=1):
+        m = re.match(r"\s*local ([A-Za-z_][A-Za-z0-9_]*) = Instance\.new", ln)
+        if not m:
+            continue
+        nombre = m.group(1)
+        if nombre in vistos:
+            continue
+        vistos.add(nombre)
+        if re.search(r"(?<![\w.])" + re.escape(nombre) + r"\.Parent", texto):
+            continue
+        # Solo es sospechoso si se usa como hijo de otra cosa ("algo = nombre").
+        # El lookahead rechaza metodos ("= v.Changed") y solo acepta "= v" a secas.
+        # Un NumberValue suelto que se tweeniza y se destruye a mano es legal.
+        if re.search(r"=\s*" + re.escape(nombre) + r"(?![\w.])", texto):
+            pass
+        else:
+            continue
+        # Si el mismo nombre se usa como variable de bucle en otro sitio ("for k, v in"),
+        # el "= v" que hemos visto no es este objeto: no se avisa para no llorar.
+        if re.search(r"\bfor\b[^\n=]*\b" + re.escape(nombre) + r"\b[^\n=]*\bin\b", texto):
+            continue
+        fallos.append((num, "orphan", ln))
+    return fallos
+
+
 def comprobar(path):
     with open(path, encoding="utf-8-sig") as fh:
         lineas = fh.read().split("\n")
@@ -177,6 +214,7 @@ def comprobar(path):
         ("bloques", rev_bloques(masc)),
         ("corchetes", rev_corchetes(masc)),
         ("adelantada", rev_adelantadas(masc)),
+        ("huerfana", rev_huerfanas(masc)),
     ):
         for num, msg, ln in lista:
             problemas.append((num, "[%s] %s" % (etiqueta, msg), ln.strip()[:88]))
