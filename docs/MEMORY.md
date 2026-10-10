@@ -97,7 +97,27 @@ Cada regla tiene autotest (archivos con el fallo planted) y hay que pasarlos ant
 
 ## Ramas (2026-10-10)
 
-`main` es la versión buena y probada. El trabajo nuevo va a `feature/<nombre>` y **solo se merges a `main` después de verificarlo en playtest**. La primera fue `feature/sonidos` (SoundDirector).
+`main` es la versión buena y probada. El trabajo nuevo va a `feature/<nombre>` y **solo
+se merges a `main` después de verificarlo en playtest**, con el visto bueno del usuario.
+La primera fue `feature/sonidos` (SoundDirector), mergeada con `--no-ff`.
+
+Método completo en `docs/WORKFLOW.md`; skill operativa en `.opencode/skills/lucha-ramas/`.
+
+## Documentación (2026-10-10)
+
+| Documento | Qué guarda |
+|---|---|
+| `docs/MEMORY.md` | **Fuente de verdad.** Gotchas, estado, reglas del equipo |
+| `docs/WORKFLOW.md` | Método de trabajo: ciclo, puerta de calidad, ramas, code review |
+| `docs/OILCOMBAT.md` | Mapa técnico del combate |
+| `docs/PREFLIGHT.md` | Reglas del preflight de Luau y sus autotests |
+| `checkpoint/2026-10-10-estado-del-lugar/` | Trabajo del compañero rescatado del place, con hashes |
+
+Skills: `lucha-workflow` (reglas duras), `lucha-qa` (verificación), `lucha-ramas`
+(ramas y merges), `lucha-revision` (revisar cambios antes de que entren).
+
+Grafo de conocimiento en `graphify-out/` (local, gitignored). Actualizado el 2026-10-10:
+**494 nodos, 957 aristas, 40 comunidades**. Se refresca con `/graphify . --update`.
 
 ## Sistema de sonido (2026-10-10, `src/client/SoundDirector.client.luau`)
 
@@ -112,8 +132,9 @@ Los **11 sonidos de `SoundService` nunca sonarían**: no había ni una referenci
 ## Limpieza hecha (2026-10-06)
 
 - Eliminado el sistema legacy **PushClient/PushServer/PushEvent** (fijaba un impulso en el MISMO clic izquierdo que el empuje OilAction actual → **bug de doble empuje resuelto**; la pose de empuje la dispara OilFighterClient:279 y hoy la consume CharacterAnimator).
-- Eliminados 3× `Workspace.Script` (`print("Hello world!")`), `ZeroScript.Memory` y los 3 `Respaldo_*` de ServerStorage.
+- Eliminados 3× `Workspace.Script` (`print("Hello world!")`) y los 3 `Respaldo_*` de ServerStorage.
 - Verificado: 0 referencias a los elementos borrados; servicios gestionados = solo lo declarado en `src/`.
+- ⚠️ **Corrección 2026-10-10**: `ZeroScript.Memory` **NO** fue borrado, sigue en el place dentro de `ServerStorage.ZeroScript.Memory` (FNV `1838474336`, 1838 bytes). Esta línea decía lo contrario y el grafo lo detectó como contradicción. **No borrar**: es un marcador conocido.
 
 ## Sincronización place → repo (2026-10-06, cambios de supergamertth8)
 

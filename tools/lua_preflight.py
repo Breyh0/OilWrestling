@@ -256,14 +256,18 @@ def rev_alfabeto(lineas):
     En un archivo con tildes y eñes se cuelan ideogramas, cirilico o japones sin que
     se note en el diff: compila igual, asi que el preflight es el unico que lo ve.
     Se permiten los simbolos de UI (formas geometricas U+2500-U+27BF, grados, flechas,
-    comillas tipograficas, monedas): esos son intencionados y no delatan un idioma.
+    comillas tipograficas, monedas), los selectores de emoji (U+FE0F, U+200D) y los
+    emoji proprios (U+1F000-U+1FAFF): en docs y skills son marcadores intencionados.
+    Lo que se busca es alfabeto NO nuestro: chino, japones, cirilico, arabe.
     """
-    permitidos = set("°·—–…“”„«»¡¿€$£¥•⇒")
+    permitidos = set("°·—–…“”„«»¡¿€$£¥•⇒\ufe0f\u200d")
     fallos = []
     for num, ln in enumerate(lineas, start=1):
         malos = sorted({
             c for c in ln
-            if ord(c) > 0x2500 and c not in permitidos and not (0x2500 <= ord(c) <= 0x27BF)
+            if ord(c) > 0x2500 and c not in permitidos
+            and not (0x2500 <= ord(c) <= 0x27BF)
+            and not (0x1F000 <= ord(c) <= 0x1FAFF)
         })
         if malos:
             fallos.append((num, "alfabeto: %s" % " ".join("%s(U+%04X)" % (c, ord(c)) for c in malos),
@@ -278,16 +282,20 @@ def comprobar(path):
     problemas = []
     if quote:
         problemas.append((0, "cadena sin cerrar (%s)" % quote, ""))
-    for etiqueta, lista in (
-        ("reservada", rev_reservadas(masc)),
-        ("bloques", rev_bloques(masc)),
-        ("corchetes", rev_corchetes(masc)),
-        ("adelantada", rev_adelantadas(masc)),
-        ("huerfana", rev_huerfanas(masc)),
-        ("alfabeto", rev_alfabeto(lineas)),
-    ):
-        for num, msg, ln in lista:
-            problemas.append((num, "[%s] %s" % (etiqueta, msg), ln.strip()[:88]))
+    # En .md (docs y skills) solo tiene sentido la regla de alfabeto: las demas
+    # describen codigo que no esta en el archivo.
+    if path.endswith(".luau"):
+        for etiqueta, lista in (
+            ("reservada", rev_reservadas(masc)),
+            ("bloques", rev_bloques(masc)),
+            ("corchetes", rev_corchetes(masc)),
+            ("adelantada", rev_adelantadas(masc)),
+            ("huerfana", rev_huerfanas(masc)),
+        ):
+            for num, msg, ln in lista:
+                problemas.append((num, "[%s] %s" % (etiqueta, msg), ln.strip()[:88]))
+    for num, msg, ln in rev_alfabeto(lineas):
+        problemas.append((num, "[alfabeto] %s" % msg, ln.strip()[:88]))
     return problemas, len(lineas)
 
 
@@ -302,7 +310,8 @@ def main():
         if os.path.isdir(arg):
             for raiz, _, archivos in os.walk(arg):
                 for a in archivos:
-                    if a.endswith(".luau"):
+                    # .luau: todas las reglas. .md: solo la de alfabeto (docs y skills).
+                    if a.endswith(".luau") or a.endswith(".md"):
                         objetivos.append(os.path.join(raiz, a))
         else:
             objetivos.append(arg)
