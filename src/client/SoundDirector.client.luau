@@ -42,6 +42,14 @@ local FONDO = 1 -- puede sonar encima de otra cosa sin molestar
 local IMPORTANTE = 2 -- no se suma a otra importante
 local PROTAGONISTA = 3 -- manda: silencia a las demas mientras dure
 
+-- Cuanto puede sonar un efecto como maximo antes de bajarse solo. El asset de
+-- victoria dura 18.9 s medidos, y eso se mete en la ronda siguiente; con tope la
+-- fanfarria se oye entera en su momento y no arrastra.
+-- Va ANTES de los mapas de abajo a proposito: si se declarara despues, aqui
+-- valdria nil en silencio (leer un local no da error, devuelve nil) y el tope
+-- no se aplicaria nunca.
+local VICTORY_MAX = 8.0
+
 -- ============================================================================
 -- Mapa de sonidos
 -- ============================================================================
@@ -159,11 +167,6 @@ end
 --
 -- La musica de batalla suena por debajo de la de lobby a proposito: con las dos al mismo
 -- nivel, los golpes se perdian. El valor exacto de cada pista esta en MUSIC_GAIN.
-
--- Cuanto puede sonar un efecto como maximo antes de bajarse solo. El asset de
--- victoria dura 18.9 s medidos, y eso se mete en la ronda siguiente; con tope la
--- fanfarria se oye entera en su momento y no arrastra.
-local VICTORY_MAX = 8.0
 
 local MUSIC_GAIN = { lobby = 1.0, battle = 0.45 }
 

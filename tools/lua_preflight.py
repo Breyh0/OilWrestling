@@ -110,21 +110,69 @@ def rev_bloques(masc):
 
 
 def rev_adelantadas(masc):
+    """Un `local` usado antes de su declaracion.
+
+    Dos variantes, ambasOccurred el 2026-10-10:
+      - llamadas:  `pushMusic` llama a `fadeTo` declarado mas abajo -> nil en runtime.
+      - valores:   `maxSeconds = VICTORY_MAX` con VICTORY_MAX declarado mas abajo ->
+                   vale nil EN SILENCIO (leer no da error), asi que la funcionality
+                   simplemente no existe y no se nota hasta que se ve en juego.
+
+    Se ignoran los miembros (`.campo`) porque esos no son el local.
+    """
     decl = {}
+    repetidos = set()
     for i, ln in enumerate(masc, start=1):
         m = re.match(r"\s*local function ([A-Za-z_][A-Za-z0-9_]*)", ln)
         if m:
-            decl[m.group(1)] = i
+            nombres = [m.group(1)]
+        else:
+            # Incluye declaraciones multiples: "local a, b = x, y"
+            m = re.match(r"\s*local\s+([A-Za-z_][\w,\s]*?)\s*(=[^=]|$)", ln)
+            if not m:
+                continue
+            nombres = [n.strip() for n in m.group(1).split(",") if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n.strip())]
+        for nombre in nombres:
+            if nombre in decl:
+                repetidos.add(nombre)  # se reutiliza el nombre: no se puede juzgar
+            else:
+                decl[nombre] = i
+
+    # Nombres que ademas son parametros de funcion o variables de bucle en otro
+    # ambito: son locales distintos y el analisis de ambitos seria de mas.
+    texto = "\n".join(masc)
+    ocultos = set()
+    for params in re.findall(r"function[^\n(]*\(([^)]*)\)", texto):
+        for p in params.split(","):
+            p = p.strip()
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", p):
+                ocultos.add(p)
+    for grupo in re.findall(r"\bfor\s+([A-Za-z_][\w,\s]*?)\s+(?:in\b|=)", texto):
+        for v in grupo.split(","):
+            v = v.strip()
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", v):
+                ocultos.add(v)
+
     fallos = []
     for name, dline in decl.items():
-        patron = re.compile(r"(?<![\w.:])" + re.escape(name) + r"\s*\(")
+        if name in repetidos or name in ocultos:
+            continue
+        # miembro -> no cuenta; llamada o valor -> cuenta
+        patron = re.compile(r"(?<![\w.:])" + re.escape(name) + r"(?![\w])")
         for i, ln in enumerate(masc, start=1):
             if i >= dline:
                 break
-            if re.match(r"\s*local function\s+" + re.escape(name) + r"\b", ln):
+            if re.match(r"\s*local (function )?" + re.escape(name) + r"\b", ln):
                 continue
             if patron.search(ln):
-                fallos.append((i, "'%s' se usa antes de declararse (L%d)" % (name, dline), ln))
+                m = patron.search(ln)
+                # "clave = valor" dentro de una tabla no es un uso del local: es el
+                # nombre de un campo. Se descarta por ahi, o se llora con cada mapa.
+                if re.match(r"\s*=[^=]", ln[m.end():]):
+                    continue
+                es_llamada = bool(re.search(r"(?<![\w.:])" + re.escape(name) + r"\s*\(", ln))
+                fallos.append((i, "'%s' se usa %s antes de declararse (L%d)"
+                               % (name, "llamando" if es_llamada else "como valor", dline), ln))
     return fallos
 
 
