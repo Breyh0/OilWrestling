@@ -12,3 +12,7 @@ node_modules/
 
 # Grafo de conocimiento (graphify) - artefacto local, se regenera con /graphify --update
 graphify-out/
+
+# Python (herramientas de preflight)
+__pycache__/
+*.pyc
