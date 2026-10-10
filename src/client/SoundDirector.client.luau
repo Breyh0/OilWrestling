@@ -65,6 +65,11 @@ local FX = {
 	throw = { { path = "SFXGroup/Combate/PushSound", gain = 0.95, cooldown = 0.18, prio = FONDO } },
 	block = { { path = "SFXGroup/Combate/PushSound", gain = 0.70, cooldown = 0.20, prio = FONDO } },
 	parry = { { path = "SFXGroup/Combate/PushSound", gain = 1.00, cooldown = 0.50, prio = FONDO } },
+	-- launch: golpe a un rival desequilibrado, lo manda muchisimo mas lejos. Es el
+	-- remate de romperle el equilibrio, asi que suena mas fuerte que un hit normal y
+	-- baja un poco la musica, pero no ocupa la pista: no puede comerse el rugido del
+	-- punto.
+	launch = { { path = "SFXGroup/Combate/PushSound", gain = 1.00, cooldown = 0.30, prio = FONDO, duck = 0.85, duckFor = 0.4 } },
 	dodge = { { path = "SFXGroup/Combate/DodgeSound", gain = 0.90, cooldown = 0.15, prio = FONDO } },
 	dash = { { path = "SFXGroup/Combate/ChargeSound", gain = 0.85, cooldown = 0.30, prio = FONDO } },
 	ringout = {

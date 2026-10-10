@@ -202,6 +202,27 @@ def rev_huerfanas(masc):
     return fallos
 
 
+def rev_alfabeto(lineas):
+    """Caracteres de alfabetos que no son el nuestro.
+
+    En un archivo con tildes y eñes se cuelan ideogramas, cirilico o japones sin que
+    se note en el diff: compila igual, asi que el preflight es el unico que lo ve.
+    Se permiten los simbolos de UI (formas geometricas U+2500-U+27BF, grados, flechas,
+    comillas tipograficas, monedas): esos son intencionados y no delatan un idioma.
+    """
+    permitidos = set("°·—–…“”„«»¡¿€$£¥•⇒")
+    fallos = []
+    for num, ln in enumerate(lineas, start=1):
+        malos = sorted({
+            c for c in ln
+            if ord(c) > 0x2500 and c not in permitidos and not (0x2500 <= ord(c) <= 0x27BF)
+        })
+        if malos:
+            fallos.append((num, "alfabeto: %s" % " ".join("%s(U+%04X)" % (c, ord(c)) for c in malos),
+                           ln.strip()[:80]))
+    return fallos
+
+
 def comprobar(path):
     with open(path, encoding="utf-8-sig") as fh:
         lineas = fh.read().split("\n")
@@ -215,6 +236,7 @@ def comprobar(path):
         ("corchetes", rev_corchetes(masc)),
         ("adelantada", rev_adelantadas(masc)),
         ("huerfana", rev_huerfanas(masc)),
+        ("alfabeto", rev_alfabeto(lineas)),
     ):
         for num, msg, ln in lista:
             problemas.append((num, "[%s] %s" % (etiqueta, msg), ln.strip()[:88]))
