@@ -85,7 +85,7 @@ local FX = {
 		-- ("Lobby en 5s", "Lobby en 4s"...) durante 5 s. Con 3.2 s entraba una segunda
 		-- fanfarria encima de la primera y sonaba como un bucle roto. Ademas la
 		-- fanfarria dura mas de 10 s, asi que se nota mucho.
-		{ path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 6.0, prio = PROTAGONISTA, hold = 6.0, duck = 0.35, duckFor = 3.2 },
+		{ path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 6.0, prio = PROTAGONISTA, hold = 6.0, duck = 0.35, duckFor = 3.2, maxSeconds = VICTORY_MAX },
 	},
 	-- grab, guardbreak y break se quedan sin sonido a proposito: la biblioteca no tiene
 	-- uno que encaje y no queremos meter ruido de mas. El bloqueo ya suena con PushSound
@@ -98,7 +98,7 @@ local UI = {
 	go = { path = "SFXGroup/Ronda/WhistleGong", gain = 1.0, cooldown = 0.60, prio = PROTAGONISTA, hold = 1.3, duck = 0.25, duckFor = 1.3 },
 	point = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.85, cooldown = 0.80, prio = IMPORTANTE, hold = 1.1, duck = 0.70, duckFor = 1.1 },
 	matchStart = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.80, cooldown = 1.20, prio = IMPORTANTE, hold = 1.3, duck = 0.60, duckFor = 1.3 },
-	victory = { path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 1.20, prio = PROTAGONISTA, hold = 3.2, duck = 0.35, duckFor = 3.2 },
+	victory = { path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 6.0, prio = PROTAGONISTA, hold = 6.0, duck = 0.35, duckFor = 3.2, maxSeconds = VICTORY_MAX },
 	draw = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.70, cooldown = 1.20, prio = IMPORTANTE, hold = 1.2, duck = 0.70, duckFor = 1.2 },
 }
 
@@ -160,10 +160,16 @@ end
 -- La musica de batalla suena por debajo de la de lobby a proposito: con las dos al mismo
 -- nivel, los golpes se perdian. El valor exacto de cada pista esta en MUSIC_GAIN.
 
+-- Cuanto puede sonar un efecto como maximo antes de bajarse solo. El asset de
+-- victoria dura 18.9 s medidos, y eso se mete en la ronda siguiente; con tope la
+-- fanfarria se oye entera en su momento y no arrastra.
+local VICTORY_MAX = 8.0
+
 local MUSIC_GAIN = { lobby = 1.0, battle = 0.45 }
 
 local music = { lobby = nil, battle = nil, current = nil, lobbyVol = 0, battleVol = 0 }
 local mix = { duck = 1, duckUntil = 0, duckToken = 0 }
+local ambience = nil
 
 local function musicBase()
 	if music.current == "battle" then
@@ -282,6 +288,23 @@ local function fire(entry, pos)
 	-- que la fanfarria mas larga de la biblioteca.
 	Debris:AddItem(s, 40)
 
+	-- Tope de duracion para los efectos que se alargan demasiado. La fanfarria de
+	-- victoria dura 18.9 s: sin tope se oye por encima de la cuenta atras del combate
+	-- siguiente. Aqui se baja y se va sola.
+	if entry.maxSeconds then
+		local sRef = s
+		task.delay(entry.maxSeconds, function()
+			if sRef.Parent then
+				fadeTo(sRef, 0, 0.6)
+				task.delay(0.8, function()
+					if sRef.Parent then
+						sRef:Destroy()
+					end
+				end)
+			end
+		end)
+	end
+
 	if entry.duck then
 		duckMusic(entry.duck, entry.duckFor)
 	end
@@ -309,6 +332,52 @@ local function playGrouped(path, gain, looped)
 	s.Parent = template:FindFirstAncestorWhichIsA("SoundGroup") or SoundService
 	s:Play()
 	return s
+end
+
+-- ============================================================================
+-- Silenciar efectos
+-- ============================================================================
+-- La fanfarria de victoria dura 18.9 s (medido) y el rugido del publico 5.9 s. Si
+-- siguen sonando cuando el jugador vuelve al menu, se quedan encima de la musica del
+-- lobby; y si empieza otra partida, se meten en la cuenta atras. Aqui se bajan y se
+-- van. La musica y el ambiente se respetan: son bucles y son los que deben seguir.
+
+local function silenciarEfectos(motivo)
+	local function bajar(d)
+		if not d.Parent then
+			return
+		end
+		fadeTo(d, 0, 0.4)
+		task.delay(0.55, function()
+			if d.Parent then
+				d:Destroy()
+			end
+		end)
+	end
+
+	-- 3D: cuelgan de un Attachment en workspace, hay que llevarse tambien el ancla
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" then
+			local ancla = d.Parent
+			bajar(d)
+			task.delay(0.7, function()
+				if ancla and ancla:IsA("Attachment") and ancla.Parent then
+					ancla:Destroy()
+				end
+			end)
+		end
+	end
+
+	-- 2D en SoundService, dejando intactos los bucles de musica y ambiente
+	for _, d in ipairs(SoundService:GetDescendants()) do
+		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" and d ~= music.lobby and d ~= music.battle and d ~= ambience then
+			bajar(d)
+		end
+	end
+
+	if DEBUG then
+		print("[SoundDirector] efectos silenciados: " .. tostring(motivo))
+	end
 end
 
 -- ============================================================================
@@ -361,6 +430,9 @@ eventRemote.OnClientEvent:Connect(function(kind, a, b, c)
 		-- caida sin punto: el golpe ya suena por su cuenta, aqui no se anade nada
 	elseif kind == "match_start" then
 		finalCantado = false
+		-- Si la fanfarria anterior sigue sonando (dura 18.9 s), se va aqui: el
+		-- comienzo del combate nuevo no puede arrancar con la del anterior encima.
+		silenciarEfectos("nueva partida")
 		fire(UI.matchStart)
 	elseif kind == "match_end" then
 		-- a es el nombre del ganador; si no hay, se empato
@@ -437,63 +509,19 @@ local function applyPlace()
 	setAmbience(not inMatch)
 end
 
--- ============================================================================
--- Al volver al menu: silencio
--- ============================================================================
--- La fanfarria de victoria dura mas de 10 s y el rugido del publico puede durar
--- 5 s. Si el jugador vuelve al menu mientras suenan, se quedan sonando encima de
--- la musica del lobby, que es justo lo que mas molesta. Al abrir el menu se bajan
--- y se van; la musica y el ambiente se respetan porque son bucles propios.
-
-local function silenciarEfectos()
-	local function bajar(d)
-		if not d.Parent then
-			return
-		end
-		fadeTo(d, 0, 0.4)
-		task.delay(0.55, function()
-			if d.Parent then
-				d:Destroy()
-			end
-		end)
-	end
-
-	-- 3D: cuelgan de un Attachment en workspace, hay que llevarse tambien el ancla
-	for _, d in ipairs(workspace:GetDescendants()) do
-		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" then
-			local ancla = d.Parent
-			bajar(d)
-			task.delay(0.7, function()
-				if ancla and ancla:IsA("Attachment") and ancla.Parent then
-					ancla:Destroy()
-				end
-			end)
-		end
-	end
-
-	-- 2D en SoundService, dejando intactos los bucles de musica y ambiente
-	for _, d in ipairs(SoundService:GetDescendants()) do
-		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" and d ~= music.lobby and d ~= music.battle and d ~= ambience then
-			bajar(d)
-		end
-	end
-
-	if DEBUG then
-		print("[SoundDirector] efectos silenciados al abrir el menu")
-	end
-end
-
-local menu = player:WaitForChild("PlayerGui"):WaitForChild("MainMenu")
-if menu then
-	menu:GetPropertyChangedSignal("Enabled"):Connect(function()
-		if menu.Enabled then
-			silenciarEfectos()
-		end
-	end)
-end
-
 -- Antes de mirar el atributo: se crean los dos loops de musica. Si el jugador ya estaba en
 -- partida cuando este script arranco, el atributo ya venia puesto y applyPlace lo recoge.
 startMusic()
 player:GetAttributeChangedSignal("InOilMatch"):Connect(applyPlace)
 applyPlace()
+
+-- Al abrir el menu principal no puede quedar cola del combate. El juego vuelve al lobby
+-- solo al terminar, asi que esto corta la fanfarria si el jugador pulsa antes de que acabe.
+local menu = player:WaitForChild("PlayerGui"):WaitForChild("MainMenu")
+if menu then
+	menu:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if menu.Enabled then
+			silenciarEfectos("menu abierto")
+		end
+	end)
+end
