@@ -56,7 +56,16 @@ local PROTAGONISTA = 3 -- manda: silencia a las demas mientras dure
 local FX = {
 	-- eventos "fx" del combate (OilCombat los manda con fx(tipo, pos, dir, fuerza);
 	-- en el cliente llegan como "fx", a=tipo, b=posicion)
-	dodge = { { path = "SFXGroup/Combate/DodgeSound", gain = 0.95, cooldown = 0.15, prio = FONDO } },
+	-- Los tipos reales que emite el combate son: hit, counter, throw, block, parry,
+	-- dodge, guardbreak, grab, break, dash, ringout y victory. Los impactos comparten
+	-- PushSound, y como el antirrapape va por ruta de sonido, una racha de golpes no
+	-- se convierte en una metralleta.
+	hit = { { path = "SFXGroup/Combate/PushSound", gain = 0.80, cooldown = 0.18, prio = FONDO } },
+	counter = { { path = "SFXGroup/Combate/PushSound", gain = 1.00, cooldown = 0.18, prio = FONDO } },
+	throw = { { path = "SFXGroup/Combate/PushSound", gain = 0.95, cooldown = 0.18, prio = FONDO } },
+	block = { { path = "SFXGroup/Combate/PushSound", gain = 0.70, cooldown = 0.20, prio = FONDO } },
+	parry = { { path = "SFXGroup/Combate/PushSound", gain = 1.00, cooldown = 0.50, prio = FONDO } },
+	dodge = { { path = "SFXGroup/Combate/DodgeSound", gain = 0.90, cooldown = 0.15, prio = FONDO } },
 	dash = { { path = "SFXGroup/Combate/ChargeSound", gain = 0.85, cooldown = 0.30, prio = FONDO } },
 	ringout = {
 		-- solo la salpicadura: el publico entra despues con el "point" si el punto cuenta.
@@ -69,8 +78,9 @@ local FX = {
 	victory = {
 		{ path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 1.0, prio = PROTAGONISTA, hold = 3.2, duck = 0.35, duckFor = 3.2 },
 	},
-	-- block, parry, grab, guardbreak y break se quedan sin sonido a proposito: la
-	-- biblioteca no tiene uno que encaje y no queremos meter ruido de mas.
+	-- grab, guardbreak y break se quedan sin sonido a proposito: la biblioteca no tiene
+	-- uno que encaje y no queremos meter ruido de mas. El bloqueo ya suena con PushSound
+	-- mas grave (gain 0.70) y el guardbreak es raro.
 }
 
 local UI = {
