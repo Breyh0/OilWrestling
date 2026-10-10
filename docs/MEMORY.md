@@ -77,6 +77,38 @@ Combate de **lucha en aceite** en un coliseo romano: empujar al rival fuera del 
 - **🔇 `StartGame` se rechaza en silencio si `activeMode ~= nil`** (partida/intermisión en curso) — síntoma: nada pasa y sin error. Confirmar escuchando `MatchUpdate` (evento `intermission/N` = aceptado). Intermisión = 15s; IA en `ServerStorage.FighterTemplate`.
 - **🎮 Hay input injection**: `user_keyboard_input` / `user_mouse_input` (acciones `keyDown`/`keyUp`/`keyPress`/`wait`, `datamodel_type: "Client"`) — sirve para playtestears sin manos. OJO: la latencia entre llamadas del modelo (~30-60s) **supera la duración de un round** → meter TODO el flujo de prueba (esperar partida + teclas + sondeos) en **UNA sola llamada** `execute`.
 
+## Preflight de Luau — obligatorio antes de sincronizar (2026-10-10)
+
+```powershell
+python tools\lua_preflight.py src     # sale con codigo 1 si hay problemas
+```
+
+No hay compilador de Luau en la máquina, así que esto es lo que sustituye al playtest para los fallos que **no dan error visible**. Salva cinco, todos.Trace:
+
+1. **Palabra reservada usada como nombre** (`lane = { until = 0 }`) → el script entero no compila y **no suena / no hace nada**, sin error en Rojo. Solo lo delata la consola del playtest (`Expected identifier when parsing expression, got 'until'`).
+2. **Referencia adelantada**: usar un `local` declarado más abajo → Luau lo busca como global, o sea `nil` en runtime → `attempt to call a nil value`.
+3. **Bloques o paréntesis sin cerrar.**
+4. **Instancia huérfana**: `Instance.new()` asignado a un local, usado como hijo (`algo = nombre`) y **sin `.Parent` en ningún sitio**. Sin Parent no suena, no sale en ningún `GetDescendants()` y **no da ningún error**. Fue el fallo de los sonidos 3D.
+5. **Alfabeto ajeno** (ideogramas, cirílico): compilan igual y no se ven ni en el diff.
+
+Cada regla tiene autotest (archivos con el fallo planted) y hay que pasarlos antes de fiarse de ella: una regla que nunca salta no vale nada, y ya hubo una con un typo (`Instance%.new`) que no detectaba nada.
+
+**Además, antes de dar cualquier cosa por buena: playtest + `get_console_output` con 0 errores.** Sin compile, el preflight es una red, no una garantía.
+
+## Ramas (2026-10-10)
+
+`main` es la versión buena y probada. El trabajo nuevo va a `feature/<nombre>` y **solo se merges a `main` después de verificarlo en playtest**. La primera fue `feature/sonidos` (SoundDirector).
+
+## Sistema de sonido (2026-10-10, `src/client/SoundDirector.client.luau`)
+
+Los **11 sonidos de `SoundService` nunca sonarían**: no había ni una referencia a `Sound` en todo `src/`. Los recursos viven fuera de los servicios que Rojo gestiona (Rojo no los toca), pero el código que los disparaba estaba en un servicio gestionado y se perdió al sincronizar.
+
+- Es **aditivo**: solo escucha `OilEvent`, que el servidor ya emitía. No toca `OilCombat` ni ningún otro archivo.
+- **Mezcla por prioridad**: FONDO (impactos, esquiva, embestida) / IMPORTANTE (salpicadura, público) / PROTAGONISTA (cuenta atrás, silbato, victoria). Una sola plaza: entra lo más importante y echa a los demás.
+- **Ducking**: la música baja sola mientras suena una pieza y vuelve sola (con token). Es lo que hace que los pitidos de la cuenta atrás se oigan sin subirlos a tope.
+- Volúmenes ajustados **en copia**, nunca en los de `SoundService`. `MUSIC_GAIN` al principio del archivo.
+- Los tipos de `fx` que emite OilCombat de verdad son: `hit`, `counter`, `throw`, `block`, `parry`, `launch`, `dodge`, `guardbreak`, `grab`, `break`, `dash`, `ringout`, `victory`. `hit`/`counter`/`throw` son los más frecuentes. Sin mapear suenan mudos.
+
 ## Limpieza hecha (2026-10-06)
 
 - Eliminado el sistema legacy **PushClient/PushServer/PushEvent** (fijaba un impulso en el MISMO clic izquierdo que el empuje OilAction actual → **bug de doble empuje resuelto**; la pose de empuje la dispara OilFighterClient:279 y hoy la consume CharacterAnimator).
