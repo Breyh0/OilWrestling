@@ -187,14 +187,16 @@ end
 -- Solo hay una plaza. Entra lo que sea mas importante que lo que ya esta sonando, y el
 -- resto espera: por eso al ganar ya no se pisan la salpicadura, el publico y la victoria.
 
-local lane = { prio = 0, until = 0 }
+-- OJO: el campo se llama freeAt y no "until" porque "until" es palabra reservada de Luau
+-- y rompe el script entero al compilar.
+local lane = { prio = 0, freeAt = 0 }
 
 local function mayPlay(prio)
 	if prio <= FONDO then
 		return true -- el fondo no ocupa plaza
 	end
 	local now = os.clock()
-	if now >= lane.until then
+	if now >= lane.freeAt then
 		return true
 	end
 	return prio > lane.prio
@@ -205,7 +207,7 @@ local function claimLane(prio, seconds)
 		return
 	end
 	lane.prio = prio
-	lane.until = os.clock() + (seconds or 1)
+	lane.freeAt = os.clock() + (seconds or 1)
 end
 
 -- ============================================================================
