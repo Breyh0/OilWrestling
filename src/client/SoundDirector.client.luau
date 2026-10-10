@@ -1,0 +1,530 @@
+-- SoundDirector (LocalScript en StarterPlayerScripts)
+-- Une la biblioteca de sonidos de SoundService con los eventos que el juego ya emite.
+--
+-- Este script es ADITIVO: no modifica OilCombat ni ningun otro archivo. Solo escucha
+-- OilEvent (que el servidor ya emite para el HUD y los efectos) y decide que suena.
+-- Si se borra el archivo, el juego se queda exactamente igual.
+--
+-- Por que faltaba: los 11 sonidos estaban en SoundService, pero ningun script llegaba a
+-- reproducirlos (cero referencias a "Sound" en src/). Los recursos de audio viven fuera de
+-- los servicios que Rojo gestiona, asi que Rojo nunca los toco; el codigo que los
+-- disparaba si vivia en uno de esos servicios y se perdio al sincronizar.
+--
+-- Reglas que sigue:
+--   - Sin timeouts en WaitForChild (provocan la carga congelada; ver MEMORY.md).
+--   - Si un sonido no esta, se salta en silencio: nunca bloquea ni da error.
+--   - No se tocan los volumenes de SoundService: todo el ajuste se hace aqui, en copia.
+--
+-- Mezcla (lo importante de este archivo):
+--   - Cada sonido tiene prioridad. Las piezas protagonistas (cuenta atras, silbato,
+--     victoria) no se pierden nunca: bajan la musica y apartan a las demas.
+--   - Las piezas importantes (publico, caida) suenan solas: si ya hay una sonando, no se
+--     suma otra encima. Antes al ganar sonaban tres a la vez (salpicadura + publico +
+--     victoria) porque el remate no|birth ningun sitio.
+--   - La musica se atenua sola mientras suena una pieza y vuelve sola despues. Asi el
+--     beep de la cuenta atras se oye sin tener que subir su volumen a tope.
+--   - El fondo (esquivar, embestir) nunca entra en la cola de prioridades.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local SoundService = game:GetService("SoundService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+
+local DEBUG = false -- poner a true para ver que suena en la consola
+
+local player = Players.LocalPlayer
+
+-- ============================================================================
+-- Prioridades
+-- ============================================================================
+local FONDO = 1 -- puede sonar encima de otra cosa sin molestar
+local IMPORTANTE = 2 -- no se suma a otra importante
+local PROTAGONISTA = 3 -- manda: silencia a las demas mientras dure
+
+-- Cuanto puede sonar un efecto como maximo antes de bajarse solo. El asset de
+-- victoria dura 18.9 s medidos, y eso se mete en la ronda siguiente; con tope la
+-- fanfarria se oye entera en su momento y no arrastra.
+-- Va ANTES de los mapas de abajo a proposito: si se declarara despues, aqui
+-- valdria nil en silencio (leer un local no da error, devuelve nil) y el tope
+-- no se aplicaria nunca.
+local VICTORY_MAX = 8.0
+
+-- ============================================================================
+-- Mapa de sonidos
+-- ============================================================================
+-- path       ruta dentro de SoundService
+-- gain       ganancia sobre el volumen que ya trae el sonido
+-- cooldown   segundos minimos entre dos disparos del MISMO sonido
+-- prio       de las constantes de arriba
+-- hold       segundos que este sonido "ocupa" la pista de los importantes
+-- duck       cuanto baja la musica mientras suena (1 = no baja)
+-- duckFor    segundos que dura esa bajada
+
+local FX = {
+	-- eventos "fx" del combate (OilCombat los manda con fx(tipo, pos, dir, fuerza);
+	-- en el cliente llegan como "fx", a=tipo, b=posicion)
+	-- Los tipos reales que emite el combate son: hit, counter, throw, block, parry,
+	-- dodge, guardbreak, grab, break, dash, ringout y victory. Los impactos comparten
+	-- PushSound, y como el antirrapape va por ruta de sonido, una racha de golpes no
+	-- se convierte en una metralleta.
+	hit = { { path = "SFXGroup/Combate/PushSound", gain = 0.80, cooldown = 0.18, prio = FONDO } },
+	counter = { { path = "SFXGroup/Combate/PushSound", gain = 1.00, cooldown = 0.18, prio = FONDO } },
+	throw = { { path = "SFXGroup/Combate/PushSound", gain = 0.95, cooldown = 0.18, prio = FONDO } },
+	block = { { path = "SFXGroup/Combate/PushSound", gain = 0.70, cooldown = 0.20, prio = FONDO } },
+	parry = { { path = "SFXGroup/Combate/PushSound", gain = 1.00, cooldown = 0.50, prio = FONDO } },
+	-- launch: golpe a un rival desequilibrado, lo manda muchisimo mas lejos. Es el
+	-- remate de romperle el equilibrio, asi que suena mas fuerte que un hit normal y
+	-- baja un poco la musica, pero no ocupa la pista: no puede comerse el rugido del
+	-- punto.
+	launch = { { path = "SFXGroup/Combate/PushSound", gain = 1.00, cooldown = 0.30, prio = FONDO, duck = 0.85, duckFor = 0.4 } },
+	dodge = { { path = "SFXGroup/Combate/DodgeSound", gain = 0.90, cooldown = 0.15, prio = FONDO } },
+	dash = { { path = "SFXGroup/Combate/ChargeSound", gain = 0.85, cooldown = 0.30, prio = FONDO } },
+	ringout = {
+		-- solo la salpicadura: el publico entra despues con el "point" si el punto cuenta.
+		-- Antes sonaban las dos a la vez y, si era el punto de victoria, se sumaba el
+		-- Rugido de Gladiador encima: tres sonidos pisandose.
+		-- hold corto a proposito: el rugido del "point" tiene que poder entrar justo
+		-- despues de la salpicadura, no quedarse esperando.
+		{ path = "SFXGroup/Combate/SplashSlip", gain = 1.0, cooldown = 0.40, prio = IMPORTANTE, hold = 0.6, duck = 0.55, duckFor = 0.9 },
+	},
+	victory = {
+		-- hold de 6 s a proposito: el servidor anuncia el final una vez por segundo
+		-- ("Lobby en 5s", "Lobby en 4s"...) durante 5 s. Con 3.2 s entraba una segunda
+		-- fanfarria encima de la primera y sonaba como un bucle roto. Ademas la
+		-- fanfarria dura mas de 10 s, asi que se nota mucho.
+		{ path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 6.0, prio = PROTAGONISTA, hold = 6.0, duck = 0.35, duckFor = 3.2, maxSeconds = VICTORY_MAX },
+	},
+	-- grab, guardbreak y break se quedan sin sonido a proposito: la biblioteca no tiene
+	-- uno que encaje y no queremos meter ruido de mas. El bloqueo ya suena con PushSound
+	-- mas grave (gain 0.70) y el guardbreak es raro.
+}
+
+local UI = {
+	-- la cuenta atras va 3, 2, 1: pitan los ultimos tres, subiendo de volumen
+	countdown = { path = "SFXGroup/Ronda/CountdownBeep", gain = 1.5, cooldown = 0.20, prio = PROTAGONISTA, hold = 0.55, duck = 0.20, duckFor = 1.1 },
+	go = { path = "SFXGroup/Ronda/WhistleGong", gain = 1.0, cooldown = 0.60, prio = PROTAGONISTA, hold = 1.3, duck = 0.25, duckFor = 1.3 },
+	point = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.85, cooldown = 0.80, prio = IMPORTANTE, hold = 1.1, duck = 0.70, duckFor = 1.1 },
+	matchStart = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.80, cooldown = 1.20, prio = IMPORTANTE, hold = 1.3, duck = 0.60, duckFor = 1.3 },
+	victory = { path = "SFXGroup/Resultado/VictorySound", gain = 1.0, cooldown = 6.0, prio = PROTAGONISTA, hold = 6.0, duck = 0.35, duckFor = 3.2, maxSeconds = VICTORY_MAX },
+	draw = { path = "SFXGroup/Combate/CrowdCheer", gain = 0.70, cooldown = 1.20, prio = IMPORTANTE, hold = 1.2, duck = 0.70, duckFor = 1.2 },
+}
+
+-- ============================================================================
+-- Utilidades
+-- ============================================================================
+
+-- Devuelve el Sound de SoundService en la ruta "Grupo/Carpeta/Hijo", o nil.
+-- Sin WaitForChild a proposito: si un dia falta un sonido, aqui no se espera a nadie.
+local function resolve(path)
+	local node = SoundService
+	for part in path:gmatch("[^/]+") do
+		node = node and node:FindFirstChild(part)
+		if not node then
+			return nil
+		end
+	end
+	return node:IsA("Sound") and node or nil
+end
+
+-- El volumen del SoundGroup al que pertenece la plantilla. Los clones en 3D se cuelgan
+-- fuera del arbol de SoundService (para poder posicionarlos en el mundo), asi que el grupo
+-- ya no les aplica su volumen y hay que compensarlo a mano.
+local function groupGain(sound)
+	local group = sound:FindFirstAncestorWhichIsA("SoundGroup")
+	return group and group.Volume or 1
+end
+
+-- Reloj anti-solape por sonido: dos bloqueos seguidos del mismo tipo no se acumulan.
+local lastPlayed = {}
+local function throttled(path, cooldown)
+	local now = os.clock()
+	if (lastPlayed[path] or -99) + cooldown > now then
+		return false
+	end
+	lastPlayed[path] = now
+	return true
+end
+
+local function warn(message)
+	warn("[SoundDirector] " .. message)
+end
+
+-- Va aqui, antes de la musica: si se declarara mas abajo, pushMusic la capturaria como
+-- nil y reventaria al cambiar de pista.
+local function fadeTo(sound, target, seconds)
+	if not sound then
+		return
+	end
+	TweenService:Create(sound, TweenInfo.new(seconds or 0.25, Enum.EasingStyle.Linear), { Volume = target }):Play()
+end
+
+-- ============================================================================
+-- Musica y su atenuacion
+-- ============================================================================
+-- El servidor ya pone el atributo InOilMatch (lo usan OilCombatHUD, OilRoundsHUD,
+-- OilWinnerCeremony y CharacterAnimator), asi que no hace falta pedir nada extra.
+--
+-- La musica de batalla suena por debajo de la de lobby a proposito: con las dos al mismo
+-- nivel, los golpes se perdian. El valor exacto de cada pista esta en MUSIC_GAIN.
+
+local MUSIC_GAIN = { lobby = 1.0, battle = 0.45 }
+
+local music = { lobby = nil, battle = nil, current = nil, lobbyVol = 0, battleVol = 0 }
+local mix = { duck = 1, duckUntil = 0, duckToken = 0 }
+local ambience = nil
+
+local function musicBase()
+	if music.current == "battle" then
+		return music.battleVol
+	end
+	return music.lobbyVol
+end
+
+local function pushMusic(seconds)
+	local target = musicBase() * mix.duck
+	if music.current == "battle" then
+		fadeTo(music.battle, target, seconds)
+	else
+		fadeTo(music.lobby, target, seconds)
+	end
+end
+
+-- Baja la musica mientras suena una pieza y la devuelve sola al terminar. Si se encadenan
+-- varias bajadas, manda la ultima: el token invalida las anteriores.
+local function duckMusic(factor, seconds)
+	mix.duck = math.clamp(factor, 0, 1)
+	mix.duckUntil = os.clock() + (seconds or 1)
+	mix.duckToken += 1
+	local mine = mix.duckToken
+	pushMusic(0.12)
+	task.spawn(function()
+		while mix.duckToken == mine and os.clock() < mix.duckUntil do
+			task.wait(0.1)
+		end
+		if mix.duckToken == mine then
+			mix.duck = 1
+			pushMusic(0.6)
+		end
+	end)
+end
+
+-- ============================================================================
+-- La pista de los sonidos importantes
+-- ============================================================================
+-- Solo hay una plaza. Entra lo que sea mas importante que lo que ya esta sonando, y el
+-- resto espera: por eso al ganar ya no se pisan la salpicadura, el publico y la victoria.
+
+-- OJO: el campo se llama freeAt y no "until" porque "until" es palabra reservada de Luau
+-- y rompe el script entero al compilar.
+local lane = { prio = 0, freeAt = 0 }
+
+local function mayPlay(prio)
+	if prio <= FONDO then
+		return true -- el fondo no ocupa plaza
+	end
+	local now = os.clock()
+	if now >= lane.freeAt then
+		return true
+	end
+	return prio > lane.prio
+end
+
+local function claimLane(prio, seconds)
+	if prio <= FONDO then
+		return
+	end
+	lane.prio = prio
+	lane.freeAt = os.clock() + (seconds or 1)
+end
+
+-- ============================================================================
+-- Reproduccion
+-- ============================================================================
+
+-- entry: { path, gain, cooldown, prio, hold, duck, duckFor }   pos: Vector3 o nil
+local function fire(entry, pos)
+	local template = resolve(entry.path)
+	if not template then
+		if DEBUG then
+			warn("no existe: " .. entry.path)
+		end
+		return
+	end
+	if not mayPlay(entry.prio) then
+		if DEBUG then
+			print(string.format("[SoundDirector] %s descartado (pista ocupada)", entry.path))
+		end
+		return
+	end
+	if not throttled(entry.path, entry.cooldown) then
+		return
+	end
+
+	claimLane(entry.prio, entry.hold)
+
+	local s = template:Clone()
+	s.Name = "SD_" .. template.Name
+	s.Volume = math.clamp(template.Volume * entry.gain * groupGain(template), 0, 1)
+
+	if pos then
+		-- 3D: un Attachment en el workspace es lo que le da posicion al sonido.
+		-- IMPORTANTE: hay que colgar el ancla en el workspace. Un Attachment sin
+		-- parent esta fuera del DataModel: el sonido no suena y no aparece en ningun
+		-- GetDescendants(), y tampoco da error (asi se colaron los sonidos 3D).
+		local anchor = Instance.new("Attachment")
+		anchor.WorldPosition = pos
+		anchor.Parent = workspace
+		s.Parent = anchor
+		Debris:AddItem(anchor, 30)
+	else
+		s.Parent = SoundService
+	end
+
+	if not s.Looped then
+		s.Ended:Once(function()
+			s:Destroy()
+		end)
+	end
+	-- Red de seguridad para CUALQUIER clon, tambien los que amenacen a sonar: sin Parent
+	-- bien puesto o con un asset rarazo, el Ended podria no llegar nunca. 40 s es mas
+	-- que la fanfarria mas larga de la biblioteca.
+	Debris:AddItem(s, 40)
+
+	-- Tope de duracion para los efectos que se alargan demasiado. La fanfarria de
+	-- victoria dura 18.9 s: sin tope se oye por encima de la cuenta atras del combate
+	-- siguiente. Aqui se baja y se va sola.
+	if entry.maxSeconds then
+		local sRef = s
+		task.delay(entry.maxSeconds, function()
+			if sRef.Parent then
+				fadeTo(sRef, 0, 0.6)
+				task.delay(0.8, function()
+					if sRef.Parent then
+						sRef:Destroy()
+					end
+				end)
+			end
+		end)
+	end
+
+	if entry.duck then
+		duckMusic(entry.duck, entry.duckFor)
+	end
+
+	s:Play()
+	if DEBUG then
+		print(string.format("[SoundDirector] %s (prio %d%s)", s.Name, entry.prio, pos and " 3D" or ""))
+	end
+end
+
+-- Clone que cuelga DENTRO de su SoundGroup, para que el volumen del grupo siga mandando.
+-- Para musica y ambiente, que no son 3D. Devuelve el clone, o nil si el sonido no existe.
+local function playGrouped(path, gain, looped)
+	local template = resolve(path)
+	if not template then
+		if DEBUG then
+			warn("no existe: " .. path)
+		end
+		return nil
+	end
+	local s = template:Clone()
+	s.Name = "SD_" .. template.Name
+	s.Volume = math.clamp(template.Volume * gain, 0, 1)
+	s.Looped = looped or false
+	s.Parent = template:FindFirstAncestorWhichIsA("SoundGroup") or SoundService
+	s:Play()
+	return s
+end
+
+-- ============================================================================
+-- Silenciar efectos
+-- ============================================================================
+-- La fanfarria de victoria dura 18.9 s (medido) y el rugido del publico 5.9 s. Si
+-- siguen sonando cuando el jugador vuelve al menu, se quedan encima de la musica del
+-- lobby; y si empieza otra partida, se meten en la cuenta atras. Aqui se bajan y se
+-- van. La musica y el ambiente se respetan: son bucles y son los que deben seguir.
+
+local function silenciarEfectos(motivo)
+	local function bajar(d)
+		if not d.Parent then
+			return
+		end
+		fadeTo(d, 0, 0.4)
+		task.delay(0.55, function()
+			if d.Parent then
+				d:Destroy()
+			end
+		end)
+	end
+
+	-- 3D: cuelgan de un Attachment en workspace, hay que llevarse tambien el ancla
+	for _, d in ipairs(workspace:GetDescendants()) do
+		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" then
+			local ancla = d.Parent
+			bajar(d)
+			task.delay(0.7, function()
+				if ancla and ancla:IsA("Attachment") and ancla.Parent then
+					ancla:Destroy()
+				end
+			end)
+		end
+	end
+
+	-- 2D en SoundService, dejando intactos los bucles de musica y ambiente
+	for _, d in ipairs(SoundService:GetDescendants()) do
+		if d:IsA("Sound") and d.Name:sub(1, 3) == "SD_" and d ~= music.lobby and d ~= music.battle and d ~= ambience then
+			bajar(d)
+		end
+	end
+
+	if DEBUG then
+		print("[SoundDirector] efectos silenciados: " .. tostring(motivo))
+	end
+end
+
+-- ============================================================================
+-- Sonido segun el evento del combate
+-- ============================================================================
+
+local eventRemote = ReplicatedStorage:WaitForChild("OilEvent")
+
+-- El servidor anuncia el final del combate UNA VEZ POR SEGUNDO durante 5 s
+-- ("Lobby en 5s", "Lobby en 4s"...). Sin este cerrojo, cada anuncio dispara una
+-- fanfarria y como la fanfarria dura mas de 10 s se solapan: suena como un bucle roto.
+-- Se reinicia con match_start, o sea una fanfarria por combate y ninguna mas.
+local finalCantado = false
+
+eventRemote.OnClientEvent:Connect(function(kind, a, b, c)
+	if kind == "fx" then
+		if a == "victory" and finalCantado then
+			return
+		end
+		local sounds = FX[a]
+		if not sounds then
+			return
+		end
+		-- a es el tipo de efecto y b la posicion; en el resto de eventos b no es una
+		-- posicion, asi que se comprueba el tipo antes de usarlo.
+		local pos = (typeof(b) == "Vector3") and b or nil
+		for _, entry in ipairs(sounds) do
+			fire(entry, pos)
+		end
+	elseif kind == "countdown" then
+		-- el servidor cuenta 3, 2, 1: solo pitan los ultimos tres, cada vez mas fuerte
+		local n = tonumber(a) or 99
+		if n >= 1 and n <= 3 then
+			local entry = UI.countdown
+			fire({
+				path = entry.path,
+				gain = entry.gain * (1.05 + 0.08 * (3 - n)),
+				cooldown = entry.cooldown,
+				prio = entry.prio,
+				hold = entry.hold,
+				duck = entry.duck,
+				duckFor = entry.duckFor,
+			})
+		end
+	elseif kind == "go" then
+		fire(UI.go)
+	elseif kind == "point" then
+		fire(UI.point)
+	elseif kind == "noscore" then
+		-- caida sin punto: el golpe ya suena por su cuenta, aqui no se anade nada
+	elseif kind == "match_start" then
+		finalCantado = false
+		-- Si la fanfarria anterior sigue sonando (dura 18.9 s), se va aqui: el
+		-- comienzo del combate nuevo no puede arrancar con la del anterior encima.
+		silenciarEfectos("nueva partida")
+		fire(UI.matchStart)
+	elseif kind == "match_end" then
+		-- a es el nombre del ganador; si no hay, se empato
+		if finalCantado then
+			return
+		end
+		finalCantado = true
+		fire(a and UI.victory or UI.draw)
+	elseif kind == "draw" then
+		if finalCantado then
+			return
+		end
+		finalCantado = true
+		fire(UI.draw)
+	end
+end)
+
+-- ============================================================================
+-- Arranque de musica y ambiente
+-- ============================================================================
+
+local function startMusic()
+	local lobby = playGrouped("MusicGroup/LobbyMusic", MUSIC_GAIN.lobby, true)
+	local battle = playGrouped("MusicGroup/BattleMusic", MUSIC_GAIN.battle, true)
+	music.lobby, music.battle = lobby, battle
+	music.lobbyVol = lobby and lobby.Volume or 0
+	music.battleVol = battle and battle.Volume or 0
+	-- Las dos arrancan a cero: se sube la que corresponda, sin solape al entrar en partida.
+	if lobby then
+		lobby.Volume = 0
+	end
+	if battle then
+		battle.Volume = 0
+	end
+	music.current = nil -- Todavia no se ha elegido ninguna
+end
+
+local function setMusic(where)
+	if music.current == where then
+		return
+	end
+	-- La pista que se deja se baja a cero: si no, al entrar en partida siguen sonando
+	-- las dos musicas a la vez.
+	local from = music.current
+	music.current = where
+	if from == "lobby" then
+		fadeTo(music.lobby, 0, 1.2)
+	elseif from == "battle" then
+		fadeTo(music.battle, 0, 1.2)
+	end
+	pushMusic(1.2)
+	if DEBUG then
+		print("[SoundDirector] musica -> " .. where)
+	end
+end
+
+-- Ambiente del publico: solo en el lobby, y se apaga al entrar en combate
+local ambience = nil
+
+local function setAmbience(on)
+	if on and not ambience then
+		ambience = playGrouped("SFXGroup/Ambiente/CrowdAmbience", 1.0, true)
+	elseif not on and ambience then
+		local a = ambience
+		ambience = nil
+		fadeTo(a, 0, 1.0)
+		Debris:AddItem(a, 2)
+	end
+end
+
+local function applyPlace()
+	local inMatch = player:GetAttribute("InOilMatch") == true
+	setMusic(inMatch and "battle" or "lobby")
+	setAmbience(not inMatch)
+end
+
+-- Antes de mirar el atributo: se crean los dos loops de musica. Si el jugador ya estaba en
+-- partida cuando este script arranco, el atributo ya venia puesto y applyPlace lo recoge.
+startMusic()
+player:GetAttributeChangedSignal("InOilMatch"):Connect(applyPlace)
+applyPlace()
+
+-- Al abrir el menu principal no puede quedar cola del combate. El juego vuelve al lobby
+-- solo al terminar, asi que esto corta la fanfarria si el jugador pulsa antes de que acabe.
+local menu = player:WaitForChild("PlayerGui"):WaitForChild("MainMenu")
+if menu then
+	menu:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if menu.Enabled then
+			silenciarEfectos("menu abierto")
+		end
+	end)
+end
