@@ -17,6 +17,12 @@ graphify-out/
 __pycache__/
 *.pyc
 
+# Logs de rojo serve: son la salida de la consola del servidor, cambian cada vez que
+# arranca y no son codigo del juego. iniciar-rojo.bat no los crea; solo si rojo se
+# lanza con la salida redirigida.
+.rojo.log
+.rojo.err
+
 # El archivo del lugar NO se versiona: lleva los scripts dentro (serian dos fuentes de
 # verdad), no se puede diffear y no tiene merge. Ver docs/ESCENA.md.
 *.rbxl
