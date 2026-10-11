@@ -163,10 +163,22 @@ Lo que **no** puede: **no juega.** Los 46 tests de Luau necesitan Roblox, así q
 siendo manuales. Tampoco comprueba cómo suena ni cómo se ve nada. Es una red, no una
 garantía.
 
-Además, `main` está **protegido con un ruleset** en GitHub: los status checks son
-obligatorios, la bypass list está vacía (nadie se los salta, ni siquiera el dueño) y la
-rama no se puede borrar. En la práctica, **`main` ya no se actualiza con `git push`
-directo**: hay que ir por pull request.
+Además hay un **ruleset en GitHub** llamado `main protegida`, con la *bypass list* vacía
+(nadie se lo salta, ni siquiera el dueño). **Estado a 2026-10-11: el ruleset existe y
+está activo, pero se creó sin reglas, así que no protege nada todavía.** Sin las reglas
+puestas, un `git push` directo a `main` sigue entrando.
+
+Lo que hay que activar (Settings → Rulesets → `main protegida`):
+
+- **Target branches** → `Branch` → `main`
+- ☑ **Require a pull request before merging** (required approvals 1, con *do not allow
+  bypassing*). **Esta es la que cierra la puerta**: los status checks, solos, no bloquean
+  un push directo.
+- ☑ **Require status checks to pass** → los tres jobs:
+  `Preflight de Luau y documentación`, `Higiene del repo`, `Lo que la CI no puede comprobar`
+
+Comprobado empíricamente: con el ruleset vacío, `git push origin rama:main` **entra**.
+Con la regla del PR puesto, tiene que salir rechazado con *required status checks*.
 
 ```sh
 git checkout main && git pull
@@ -175,10 +187,6 @@ git checkout -b feature/<nombre>
 git push -u origin feature/<nombre>
 # Al subir la rama, GitHub ofrece abrir el PR. Se revisa y se mergea.
 ```
-
-Si un push directo a `main` sale rechazado con un error de *required status checks* o de
-*changes must be made through a pull request*, **no es un fallo**: la regla está
-funcionando.
 
 ### Publicar una versión
 
