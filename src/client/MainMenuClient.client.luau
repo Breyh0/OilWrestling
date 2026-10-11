@@ -186,24 +186,16 @@ local function newButton(parent, props)
 	return b
 end
 
--- La lista necesita un UIListLayout para APILAR las tarjetas. El ScrollingFrame de
--- Items se edita a mano en Studio y no traia ninguno: sin esto las ocho tarjetas se
--- dibujan unas encima de otras en (0,0) y solo se ve la ultima pintada.
+-- El diseño de la lista NO se toca: ShopPanel/Items ya trae montados en Studio un
+-- UIGridLayout ("Layout", celdas de 184x172, 3 columnas, CellPadding 12, centrada) y un
+-- UIPadding. Ese grid es el diseño original y pone el tamaño de cada tarjeta.
 --
--- Se guarda la referencia porque pintar() borra TODO lo que cuelgue de la lista, y el
--- layout tambien colgaria de ahi: si se destruyera, la segunda vuelta se amontonarian
--- todas otra vez y solo se veria un item.
-local listaLayout = shopItems:FindFirstChildOfClass("UIListLayout")
-if not listaLayout then
-	listaLayout = Instance.new("UIListLayout")
-	listaLayout.Name = "ListaLayout"
-	listaLayout.FillDirection = Enum.FillDirection.Vertical
-	listaLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	listaLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	listaLayout.Padding = UDim.new(0, 8)
-	listaLayout.Parent = shopItems
-end
-shopItems.AutomaticCanvasSize = Enum.AutomaticSize.Y
+-- Por eso la limpieza de pintar() solo borra GuiObject: si se borrara todo lo que cuelgue,
+-- se llevarian por delante el UIGridLayout y el UIPadding, que son estructura, y la
+-- segunda vuelta amontonaria todas las tarjetas en (0,0).
+--
+-- Ni se crea un layout propio ni se tocan AutomaticCanvasSize ni las medidas: eso ya
+-- estaba bien puesto a mano y cualquier cambio aqui es pisar el diseño.
 
 -- Una sola lista, como el original, pero ordenada: escudos primero, dentro de cada
 -- ranura lo que ya tienes delante y luego por precio. Sin esto habria que bajar mucho
@@ -226,11 +218,14 @@ local function listaOrdenada()
 end
 
 local function pintar()
-	-- Todo lo que cuelgue de la lista es contenido: tarjetas y el aviso de "no hay nada".
-	-- Se borra sin mirar la clase; si se filtrara por Frame, el aviso (un TextLabel) se
-	-- acumularia uno encima de otro en cada repintado. El layout se salta: es estructura.
+	-- Solo se borra lo que hemos pintado nosotros: las tarjetas (Frame) y el aviso de
+	-- lista vacia (TextLabel). Los dos son GuiObject.
+	--
+	-- El filtro importa: si se hiciera "borrar todo lo que cuelgue de Items", se irian
+	-- tambien el UIGridLayout y el UIPadding que traia el diseño original, y a la
+	-- segunda vuelta las 20 tarjetas se dibujarian unas encima de otras.
 	for _, h in ipairs(shopItems:GetChildren()) do
-		if h ~= listaLayout then
+		if h:IsA("GuiObject") then
 			h:Destroy()
 		end
 	end
@@ -254,16 +249,16 @@ local function pintar()
 		-- que en el original, donde el borde llevaba el color del item.
 		local colorItem = item.color or tinte
 
-		-- Original: 160 px. Aqui 210, lo unico que se le anade es la linea de la habilidad.
-		local ALTO = 210
-
+		-- === DIBUJO: MainMenuClient_original.luau, sin tocar una medida ===
+		-- El Size no es el del grid: el UIGridLayout de Items manda (184x172) y lo
+		-- sobrescribe. Se deja la linea del original por si alguien lee el codigo.
 		local card = Instance.new("Frame")
 		card.Name = item.id
 		card.LayoutOrder = i
 		card.BackgroundColor3 = Color3.fromRGB(38, 46, 32)
 		card.BorderSizePixel = 0
 		card.ZIndex = 11
-		card.Size = UDim2.new(1, -8, 0, ALTO)
+		card.Size = UDim2.new(1, -8, 0, 160)
 		card.Parent = shopItems
 
 		local corner = Instance.new("UICorner")
@@ -271,36 +266,32 @@ local function pintar()
 		corner.Parent = card
 		local stroke = Instance.new("UIStroke")
 		stroke.Color = colorItem
+		-- El grosor se sube solo cuando lo llevas puesto: es el unico sitio donde cabe
+		-- un estado visual sin meter nada mas en la tarjeta.
 		stroke.Thickness = puesto and 3 or 1.5
 		stroke.Transparency = puesto and 0.2 or 0.6
 		stroke.Parent = card
 
-		-- Icono CENTRADO arriba, como en el original. El color lo trae el escudo; si no
-		-- lo tienes puesto sale en blanco, igual que antes.
+		-- Icono centrado de 44 px, blanco. Como en el original.
 		newLabel(card, { Name = "Icon", Position = UDim2.new(0, 0, 0, 12), Size = UDim2.new(1, 0, 0, 56),
-			Font = Enum.Font.GothamBold, TextSize = 44,
-			TextColor3 = puesto and colorItem or Color3.new(1, 1, 1),
+			Font = Enum.Font.GothamBold, TextSize = 44, TextColor3 = Color3.new(1, 1, 1),
 			Text = item.slot == "shield" and "\u{1F6E1}" or (item.slot == "victory" and "\u{1F451}" or "\u{1F4A7}") })
 
 		newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 22),
 			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
 			Text = item.name, TextTruncate = Enum.TextTruncate.AtEnd })
 
-		-- Lo unico que se anade al diseno original: que hace este escudo. Sin esta linea
-		-- hay que comprarlo para averiguar si Sirve de algo. El texto lo genera
-		-- ShieldAbilities desde los numeros, asi que si se tocan sale solo.
-		newLabel(card, { Name = "Hab", Position = UDim2.new(0, 8, 0, 98), Size = UDim2.new(1, -16, 0, 42),
-			Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Color3.fromRGB(190, 200, 175),
-			Text = item.abilityText or item.desc or "", TextWrapped = true,
-			TextYAlignment = Enum.TextYAlignment.Top })
-
-		-- Precio en dorado, como en el original. Si ya lo tienes, lo que va aqui es el
-		-- estado: el original no tenia estados porque no habia cartera ni equipado.
-		newLabel(card, { Name = "Price", Position = UDim2.new(0, 0, 0, 142), Size = UDim2.new(1, 0, 0, 20),
+		-- Precio en dorado, como en el original.
+		-- Lo unico que cambia de sitio es el TEXTO cuando ya lo tienes: en vez del precio
+		-- sale el estado. Sin esto no habria forma de saber que puedes equipar.
+		newLabel(card, { Name = "Price", Position = UDim2.new(0, 0, 0, 98), Size = UDim2.new(1, 0, 0, 20),
 			Font = Enum.Font.GothamBold, TextSize = 14,
 			TextColor3 = mio and OK_COLOR or GOLD,
 			Text = puesto and "EN USO" or (mio and "EN CARTERA" or ("\u{1F4B0} " .. item.price)) })
 
+		-- Boton: el original lo ponia del color del item. El texto y el fondo cambian segun
+		-- el estado porque el original no tenia estados (no habia cartera ni equipado), pero
+		-- la forma, la medida y el borde blanco son los suyos.
 		local boton
 		if puesto then
 			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
@@ -314,7 +305,7 @@ local function pintar()
 		else
 			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
 				Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.new(1, -24, 0, 34),
-				TextSize = 14, BackgroundColor3 = Color3.fromRGB(200, 165, 60), Text = "COMPRAR" })
+				TextSize = 14, BackgroundColor3 = colorItem, Text = "COMPRAR" })
 		end
 
 		bindButton(boton)

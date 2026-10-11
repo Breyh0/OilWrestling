@@ -349,19 +349,45 @@ precio se puede cambiar.
 - `buildCatalog` es una funcion local, no `Service.GetCatalog`: `loadPlayer` la usa y esta
   declarado antes que `Service`. La regla `adelantada` del preflight lo para.
 
-### Leccion de diseno (2026-10-11): el diseno original esta en el rescate
+### Leccion de diseno (2026-10-11): el diseno esta EN EL LUGAR, no en el codigo
 
-**Me invente un diseno de tarjetas entero y no era el del proyecto.** El original estaba
-a mano, en `checkpoint/2026-10-11-escudos/.../MainMenuClient_original.luau`, con medidas
- literales. Cuando se toca una GUI que ya existia, **el diseno se rescata, no se
-reimprovisa**. El Catalogo de donde salia cada cosa se lee ahi.
+**Me invente un diseno de tarjetas entero y rompi el que habia.** Dos veces: primero una
+lista vertical, luego una "restauracion" que seguia sin ser el original. Lo que decia este
+apartado antes ("el original es una lista plana") **era tambien falso**: la fuente de
+verdad del diseno **no es el script, es el GUI montado en Studio**.
 
-Original: tarjeta de **160 px**, icono **centrado** de 44 px, nombre en GothamBold 15,
-precio GothamBold 14 en dorado, boton de 34 px **con borde blanco** (`UIStroke` de nombre
-`"Stroke"`, modo `Border`), textos **centrados**, una sola lista plana sin pestañas.
+**Antes de dibujar nada, mirar que hay DENTRO del contenedor, en el lugar:**
 
-Lo que si se decidio anadir: la **linea de que hace el escudo** (y por eso 210 px). Lo
-que se decidio quitar: las **pestanas** por ranura.
+```
+StarterGui.MainMenu.Background.ShopPanel.Items
+  Layout     <UIGridLayout>  CellSize 184x172, CellPadding 12,
+                            FillDirection Horizontal, HAlign Center, SortOrder LayoutOrder
+  UIPadding                  T6 B6 L4 R4
+```
+
+Eso es una **cuadrícula de 3 columnas de 184x172**, y es el diseno de `supergamertth8`.
+En 604 px caben exactamente 3 (3x184 + 2x12 = 576), y 172 es justo icono + nombre +
+precio + boton. **No cabe una linea mas.** El `card.Size` del codigo era una linea muerta:
+el `UIGridLayout` con `CellSize` explicito sobrescribe el tamano de cada tarjeta.
+
+**Los dos fallos de verdad:**
+
+1. **Busque `UIListLayout`, no lo encontre y conclude que no habia layout.** Era un
+   `UIGridLayout`: otra clase distinta. "No he encontrado lo que buscaba" no es "no
+   existe". La comprobacion era `FindFirstChildOfClass("UIListLayout")`: un solo nombre
+   adivinado. Habia que **listar los hijos y mirarlos**.
+2. **Mi limpieza se comia la estructura.** Borrava todo lo que colgaba de `Items`, y eso
+   incluia el `UIGridLayout` y el `UIPadding` originales: en la segunda vuelta las veinte
+   tarjetas se amontonaban en (0,0). Ahora borra **solo `GuiObject`** (las tarjetas y el
+   aviso de lista vacia). Los layouts y el padding son estructura y no se tocan.
+
+**Regla que sale de aqui:** si vas a pintar dentro de un contenedor que ya existe,
+**primero se listan sus hijos y se leen sus medidas**. El script genera el CONTENIDO; el
+GUI manda sobre la FORMA.
+
+Lo unico que cambia del diseno original es el TEXTO cuando ya tienes el objeto (el precio
+se sustituye por el estado y el boton dice EQUIPAR/PUESTO), porque sin eso no habria forma
+de equipar. La forma, las medidas y el borde blanco son los suyos.
 
 ## TODO / Known issues
 
