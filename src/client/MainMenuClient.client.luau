@@ -92,6 +92,10 @@ end
 -- fallo que marca lucha-feature: si el cliente decide el precio, el precio se puede
 -- cambiar. Ahora el catalogo viene de ProgressionService.GetCatalog(), que lo arma desde
 -- CosmeticsShared, y el boton solo manda un id.
+--
+-- El DIBUJO es el original de MainMenuClient_original.luau (icono centrado, nombre,
+-- precio, boton con borde blanco). Lo unico que se le anade es la linea de la habilidad:
+-- sin ella no se sabe que hace un escudo raro antes de comprarlo.
 -- ============================================================
 local purchaseEvent = ReplicatedStorage:WaitForChild("PurchaseItem")
 local equipEvent = ReplicatedStorage:WaitForChild("EquipItem")
@@ -107,17 +111,13 @@ local RARITY_COLOR = {
 	legendario = Color3.fromRGB(255, 190, 60),
 }
 
-local RANURAS = {
-	{ id = "shield", name = "Escudos", emoji = "\u{1F6E1}" },
-	{ id = "victory", name = "Victoria", emoji = "\u{1F451}" },
-	{ id = "ringout", name = "Ring-out", emoji = "\u{1F4A7}" },
-}
+-- Orden de las ranuras en la lista. Es una lista plana, como el original, pero agrupada:
+-- primero los escudos, que es lo que se vino a buscar.
+local ORDEN_RANURA = { shield = 1, victory = 2, ringout = 3 }
 
-local catalogo = {}      -- lo que manda el servidor
-local miCartera = {}     -- owned
-local miEquipado = {}    -- eq
-local ranuraAbierta = "shield"
-local filtroTabla = "todos"
+local catalogo = {}   -- lo que manda el servidor
+local miCartera = {}  -- owned
+local miEquipado = {} -- eq
 
 local toast = Instance.new("TextLabel")
 toast.Name = "Toast"
@@ -174,31 +174,16 @@ local function newButton(parent, props)
 	local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, 10)
 	c.Parent = b
+	-- El borde blanco del boton es del diseno original. Se llama "Stroke" a proposito:
+	-- bindButton lo busca por ese nombre para saber cuanto oscurecerlo al pasar el raton.
+	local s = Instance.new("UIStroke")
+	s.Name = "Stroke"
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Color = Color3.new(1, 1, 1)
+	s.Thickness = 1.5
+	s.Transparency = 0.7
+	s.Parent = b
 	return b
-end
-
--- Barra de ranuras: los escudos son lo primero porque es lo que se ha pedido.
--- Va PEGADA AL PANEL, no dentro de la lista: pintar() borra todos los hijos de la lista,
--- y si la barra fuera uno mas se destruiria sola en el primer repintado.
-local tabs = Instance.new("Frame")
-tabs.Name = "Tabs"
-tabs.BackgroundTransparency = 1
-tabs.Size = UDim2.new(1, -56, 0, 28)
-tabs.Position = UDim2.new(0, 28, 0, 64)
-tabs.ZIndex = 12
-tabs.Parent = shopPanel
-
--- La lista baja para dejarle sitio a la barra. Se ajusta en codigo porque el panel se
--- edita a mano en Studio y asi el script manda sobre las medidas de verdad.
-shopItems.Position = UDim2.new(0, 28, 0, 98)
-shopItems.Size = UDim2.new(1, -56, 1, -190)
-do
-	local l = Instance.new("UIListLayout")
-	l.FillDirection = Enum.FillDirection.Horizontal
-	l.HorizontalAlignment = Enum.HorizontalAlignment.Left
-	l.SortOrder = Enum.SortOrder.LayoutOrder
-	l.Padding = UDim.new(0, 6)
-	l.Parent = tabs
 end
 
 -- La lista necesita un UIListLayout para APILAR las tarjetas. El ScrollingFrame de
@@ -220,13 +205,23 @@ if not listaLayout then
 end
 shopItems.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
-local function filtrar()
+-- Una sola lista, como el original, pero ordenada: escudos primero, dentro de cada
+-- ranura lo que ya tienes delante y luego por precio. Sin esto habria que bajar mucho
+-- para encontrar un escudo concreto.
+local function listaOrdenada()
 	local lista = {}
 	for _, it in ipairs(catalogo) do
-		if it.slot == ranuraAbierta and (filtroTabla == "todos" or it.rarity == filtroTabla) then
-			lista[#lista+1] = it
-		end
+		lista[#lista+1] = it
 	end
+	table.sort(lista, function(a, b)
+		local sa = ORDEN_RANURA[a.slot] or 9
+		local sb = ORDEN_RANURA[b.slot] or 9
+		if sa ~= sb then return sa < sb end
+		local fa, fb = miCartera[a.id] and 0 or 1, miCartera[b.id] and 0 or 1
+		if fa ~= fb then return fa < fb end
+		if a.price ~= b.price then return a.price < b.price end
+		return a.id < b.id
+	end)
 	return lista
 end
 
@@ -240,20 +235,12 @@ local function pintar()
 		end
 	end
 
-	local lista = filtrar()
-	-- primero los que ya tienes, para no tener que buscarlos
-	table.sort(lista, function(a, b)
-		local fa, fb = miCartera[a.id] and 0 or 1, miCartera[b.id] and 0 or 1
-		if fa ~= fb then return fa < fb end
-		if a.price ~= b.price then return a.price < b.price end
-		return a.id < b.id
-	end)
-
+	local lista = listaOrdenada()
 	if #lista == 0 then
 		newLabel(shopItems, {
-			Name = "Vacio", Position = UDim2.new(0, 8, 0, 44), Size = UDim2.new(1, -16, 0, 30),
+			Name = "Vacio", Size = UDim2.new(1, -16, 0, 30),
 			Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Color3.fromRGB(160, 170, 150),
-			Text = "No hay nada en esta ranura todavia.", TextWrapped = true,
+			Text = "Todavia no hay nada en la tienda.", TextWrapped = true,
 		})
 		return
 	end
@@ -263,9 +250,12 @@ local function pintar()
 		local mio = miCartera[item.id] == true
 		local puesto = miEquipado[item.slot] == item.id
 
-		-- ALTURA_CARD: cabe el texto de la habilidad, que es lo que mas crece. Con 168 el
-		-- precio se metia debajo del boton; con 212 habia medio cartel de hueco.
-		local ALTO = 176
+		-- El color del escudo manda sobre el de la rareza: es lo que hace el borde, igual
+		-- que en el original, donde el borde llevaba el color del item.
+		local colorItem = item.color or tinte
+
+		-- Original: 160 px. Aqui 210, lo unico que se le anade es la linea de la habilidad.
+		local ALTO = 210
 
 		local card = Instance.new("Frame")
 		card.Name = item.id
@@ -275,61 +265,56 @@ local function pintar()
 		card.ZIndex = 11
 		card.Size = UDim2.new(1, -8, 0, ALTO)
 		card.Parent = shopItems
+
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0, 14)
 		corner.Parent = card
 		local stroke = Instance.new("UIStroke")
-		stroke.Color = tinte
+		stroke.Color = colorItem
 		stroke.Thickness = puesto and 3 or 1.5
-		stroke.Transparency = 0.5
+		stroke.Transparency = puesto and 0.2 or 0.6
 		stroke.Parent = card
 
-		-- Icono a la izquierda, con el nombre y la rareza a su derecha: gasta menos alto
-		-- que un icono centrado encima de todo.
-		-- El color lo trae el escudo; si no lo tienes puesto, sale en gris.
-		local iconColor = item.color or tinte
-		newLabel(card, { Name = "Icon", Position = UDim2.new(0, 10, 0, 12), Size = UDim2.new(0, 44, 0, 44),
-			Font = Enum.Font.GothamBold, TextSize = 30,
-			TextColor3 = puesto and iconColor or Color3.fromRGB(150, 155, 145),
+		-- Icono CENTRADO arriba, como en el original. El color lo trae el escudo; si no
+		-- lo tienes puesto sale en blanco, igual que antes.
+		newLabel(card, { Name = "Icon", Position = UDim2.new(0, 0, 0, 12), Size = UDim2.new(1, 0, 0, 56),
+			Font = Enum.Font.GothamBold, TextSize = 44,
+			TextColor3 = puesto and colorItem or Color3.new(1, 1, 1),
 			Text = item.slot == "shield" and "\u{1F6E1}" or (item.slot == "victory" and "\u{1F451}" or "\u{1F4A7}") })
 
-		newLabel(card, { Name = "Name", Position = UDim2.new(0, 60, 0, 14), Size = UDim2.new(1, -68, 0, 22),
+		newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 22),
 			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
-			TextXAlignment = Enum.TextXAlignment.Left,
 			Text = item.name, TextTruncate = Enum.TextTruncate.AtEnd })
 
-		newLabel(card, { Name = "Raridad", Position = UDim2.new(0, 60, 0, 38), Size = UDim2.new(1, -68, 0, 16),
-			Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = tinte,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Text = (item.rarity or "comun"):gsub("^%l", string.upper) })
-
-		-- La habilidad, si la tiene. El texto lo genera ShieldAbilities desde los numeros,
-		-- asi que si se cambia un numero de equilibrio el texto cambia solo.
-		newLabel(card, { Name = "Hab", Position = UDim2.new(0, 12, 0, 64), Size = UDim2.new(1, -24, 0, 42),
+		-- Lo unico que se anade al diseno original: que hace este escudo. Sin esta linea
+		-- hay que comprarlo para averiguar si Sirve de algo. El texto lo genera
+		-- ShieldAbilities desde los numeros, asi que si se tocan sale solo.
+		newLabel(card, { Name = "Hab", Position = UDim2.new(0, 8, 0, 98), Size = UDim2.new(1, -16, 0, 42),
 			Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Color3.fromRGB(190, 200, 175),
-			TextXAlignment = Enum.TextXAlignment.Left,
 			Text = item.abilityText or item.desc or "", TextWrapped = true,
 			TextYAlignment = Enum.TextYAlignment.Top })
 
-		-- Precio o estado. Centrado a proposito: va encima de un boton del mismo ancho.
-		newLabel(card, { Name = "Precio", Position = UDim2.new(0, 10, 0, 108), Size = UDim2.new(1, -20, 0, 18),
-			Font = Enum.Font.GothamBold, TextSize = 13,
+		-- Precio en dorado, como en el original. Si ya lo tienes, lo que va aqui es el
+		-- estado: el original no tenia estados porque no habia cartera ni equipado.
+		newLabel(card, { Name = "Price", Position = UDim2.new(0, 0, 0, 142), Size = UDim2.new(1, 0, 0, 20),
+			Font = Enum.Font.GothamBold, TextSize = 14,
 			TextColor3 = mio and OK_COLOR or GOLD,
 			Text = puesto and "EN USO" or (mio and "EN CARTERA" or ("\u{1F4B0} " .. item.price)) })
 
 		local boton
 		if puesto then
-			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 32),
-				BackgroundColor3 = Color3.fromRGB(60, 70, 55), Text = "PUESTO", AutoButtonColor = false })
+			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.new(1, -24, 0, 34),
+				TextSize = 14, BackgroundColor3 = Color3.fromRGB(60, 70, 55),
+				Text = "PUESTO", AutoButtonColor = false })
 		elseif mio then
-			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 32),
-				BackgroundColor3 = tinte, Text = "EQUIPAR" })
+			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.new(1, -24, 0, 34),
+				TextSize = 14, BackgroundColor3 = colorItem, Text = "EQUIPAR" })
 		else
-			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 32),
-				BackgroundColor3 = Color3.fromRGB(200, 165, 60), Text = "COMPRAR" })
+			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.new(1, -24, 0, 34),
+				TextSize = 14, BackgroundColor3 = Color3.fromRGB(200, 165, 60), Text = "COMPRAR" })
 		end
 
 		bindButton(boton)
@@ -349,39 +334,6 @@ local function pintar()
 	-- que falten items.
 	shopItems.CanvasPosition = Vector2.new(0, 0)
 end
-
--- Las pestañas se reparten el ancho de la barra. Se guardan para poder resaltar la
--- activa: sin esto el usuario no sabe de que ranura esta viendo los items.
-local pestanas = {}
-local TAB_TONO = Color3.fromRGB(45, 55, 40)
-local TAB_ACTIVA = Color3.fromRGB(96, 116, 70)
-
-local function marcarPestana()
-	for _, r in ipairs(RANURAS) do
-		local b = pestanas[r.id]
-		if b then
-			local activa = (r.id == ranuraAbierta)
-			b.BackgroundColor3 = activa and TAB_ACTIVA or TAB_TONO
-			b.TextColor3 = activa and Color3.new(1, 1, 1) or Color3.fromRGB(175, 185, 165)
-			b.TextTransparency = activa and 0 or 0.35
-		end
-	end
-end
-
-for i, r in ipairs(RANURAS) do
-	local b = newButton(tabs, { Name = r.id, LayoutOrder = i,
-		Size = UDim2.new(1 / #RANURAS, -4, 1, 0), BackgroundColor3 = TAB_TONO,
-		Text = r.emoji .. "  " .. r.name })
-	pestanas[r.id] = b
-	bindButton(b)
-	b.MouseButton1Click:Connect(function()
-		ranuraAbierta = r.id
-		filtroTabla = "todos"
-		marcarPestana()
-		pintar()
-	end)
-end
-marcarPestana()
 
 -- Escuchar al servidor: el catalogo, la cartera y el resultado de comprar/equipar
 notifyEvent.OnClientEvent:Connect(function(kind, data)
