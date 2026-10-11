@@ -8,12 +8,19 @@ desde el punto de vista de quien juega.
 
 ---
 
-## Sin publicar — escudos (capa de datos, todavía invisible)
+## Sin publicar — escudos (el bloqueo ya tiene escudo; la tienda todavía no)
 
 **Añadido**
-- Catálogo de escudos y habilidades recuperado del lugar y reconstruido. **El jugador no
-  ve nada todavía**: no hay tienda, ni cajas, ni habilidad activa. Es deliberado; conectar
-  el motor al combate es otra rama con su propio playtest.
+- **Los escudos se ven.** Al bloquear (tecla R) sale un círculo mágico delante del luchador
+  con dos anillos que giran en sentidos opuestos. La ventana de parry se avisa con un anillo
+  dorado que se cierra sobre el escudo, y la rotura de guardia lo hace **estallar** en
+  fragmentos con los anillos acelerados: se lee como una fractura, no como un cambio de
+  color.
+- El escudo **ya sabe qué color llevar**: lo saca del escudo equipado. De momento todos
+  ven el Azul Clásico, porque la tienda todavía no existe. El día que haya tienda, cada
+  escudo se verá con su color sin tocar nada más.
+- Catálogo de escudos y habilidades recuperado del lugar y reconstruido. **El jugador no ve
+  nada todavía** de la tienda: no hay artículos, ni cajas, ni habilidad activa.
 
 **Arreglado**
 - Un `typo` en el test del lugar (`fuerzas` escrito con `z` y usado con `t`) que hacía que

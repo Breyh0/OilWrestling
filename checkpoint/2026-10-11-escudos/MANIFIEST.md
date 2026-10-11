@@ -121,13 +121,17 @@ trabajo nuevo, no un rescate. El sitio natural es junto a `applyCosmeticAttribut
 
 ## 1ter. Lo que queda en el lugar y NO se ha rescatado
 
-Solo queda un elemento suelto, y **no es un script**:
+**Nada.** El rescate esta completo.
 
-**`StarterPlayerScripts.OilBlockVFXClient`**. El propio `OilBlockVFX` dice *"Lo usa
-StarterPlayerScripts.OilBlockVFXClient"*, y ese cliente **no aparece en ningun respaldo**.
-Sin el, los VFX del bloqueo rescatados no se dibujan: el modulo esta ahi, pero nadie lo
-llama. Si se limpia `ServerStorage` y el cliente no existia mas que ahi, esa pieza esta
-perdida y habria que escribirla de cero (llamar a `attach` / `onFx` / `step`).
+Lo que **no** estaba guardado en ningun backup era el cliente `OilBlockVFXClient`, y ya
+esta reconstruido y verificado en playtest: esta en `src/client/OilBlockVFXClient.client.luau`
+(con su modulo en `src/shared/OilBlockVFX.luau`), y los escudos se ven. No es una copia
+del original, porque el original no existia: se escribio leyendo la cabecera del propio
+modulo, que decia "Lo usa StarterPlayerScripts.OilBlockVFXClient".
+
+Los respaldo que quedan en `ServerStorage` y **no** estan en git son versiones antiguas de
+cosas que ya viven en `src/` (`Respaldo_Deslizamiento`, `Respaldo_Animacion`,
+`Respaldo_Visual_Piso`, `Respaldo_Ring_Estructura`), asi que no son riesgo.
 
 ## 1quater. Lo que NO hay que llevar de `OilCombat_original`
 

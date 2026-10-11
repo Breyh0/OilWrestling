@@ -240,7 +240,37 @@ Las IAs de los dos compañeros cargan estas skills automáticamente desde el rep
 
 **Grafo de conocimiento** (graphify, `graphify-out/` va en `.gitignore`): 318 nodos / 621 aristas / 38 comunidades. Preguntas de arquitectura ("qué llama a OilCombat.perform", "qué toca el suelo aceitoso") → responder con `graphify query "..."` en vez de releer 1400 líneas. `OILCOMBAT.md` es el puente documental→código (3 de sus 6 aristas cruzan de comunidad).
 
-## Escudos y habilidades (2026-10-11, `src/shared/CosmeticsShared.luau` + `src/shared/ShieldAbilities.luau`)
+## Escudos: VFX del bloqueo (2026-10-11, `src/shared/OilBlockVFX.luau` + `src/client/OilBlockVFXClient.client.luau`)
+
+**Los escudos ya se ven.** El modulo se rescue del lugar verificado byte a byte; el
+**cliente no estaba en ningun respaldo** y se reconstruyo leyendo la cabecera del propio
+modulo ("Lo usa StarterPlayerScripts.OilBlockVFXClient").
+
+- `OilBlockVFX`: el modulo, tal cual, **mas una cosa que le faltaba**: `Controller:setTint`.
+  El original decia en su cabecera que leia `CosShield` para el aspecto, pero no lo leia.
+  Ahora si. El dorado del parry y el rojo de la rotura **no** cambian: son semanticos.
+- `OilBlockVFXClient`: engancha cada luchador por la etiqueta `OilFighter`, avanza
+  `VFX.step()` cada frame, pasa los `fx` de bloqueo y aplica el color desde
+  `CosmeticsShared.ShieldSkin(char:GetAttribute("CosShield"))`.
+- El color sale del **atributo `CosShield` del personaje**. Todavia nadie lo fija (la
+  tienda no existe), asi que se ve el Azul Clasico. En cuanto la tienda escriba ese
+  atributo, el color cambia solo: verificado poniendo `escudo_constelacion` y viendo el
+  escudo pasar de (70,110,190) a (120,90,200).
+
+### Tres trampas que costaron el playtest
+
+1. **`MainMenu` NO se oculta si arrancas el combate por el remoto.** `fadeOut()` solo se
+   llama desde el boton Jugar, no desde `StartGame`. Disparar el remoto desde un script
+   deja el menu ENCIMA del juego, y todas las capturas sale el menu aunque haya un
+   combate corriendo detras. Para pruebas: `MainMenu.Enabled = false`.
+2. **El atributo `Blocking` lo reescribe `publish` cada 0,1 s** con `e.blocking or nil`.
+   Ponerlo a mano desde el servidor no dura nada: la guardia se levanta y se apaga sola.
+   La unica via es la accion real por `OilAction`.
+3. **La guardia se agota sola**: `Stamina.BlockDrainPerSec = 9`, o sea que a los ~11 s
+   revienta y el luchador queda aturdido. Para una ventana estable hay que reponer el
+   atributo en cliente cada frame.
+
+## Escudos: catalogo y habilidades (2026-10-11, `src/shared/CosmeticsShared.luau` + `src/shared/ShieldAbilities.luau`)
 
 Rescate y reconstruccion del sistema de escudos que `supergamertth8` dejo dormido en
 `ServerStorage`. Detalle completo en `checkpoint/2026-10-11-escudos/MANIFIEST.md`.
