@@ -177,14 +177,21 @@ local function newButton(parent, props)
 	return b
 end
 
--- Barra de ranuras: los escudos son lo primero porque es lo que se ha pedido
+-- Barra de ranuras: los escudos son lo primero porque es lo que se ha pedido.
+-- Va PEGADA AL PANEL, no dentro de la lista: pintar() borra todos los hijos de la lista,
+-- y si la barra fuera uno mas se destruiria sola en el primer repintado.
 local tabs = Instance.new("Frame")
 tabs.Name = "Tabs"
 tabs.BackgroundTransparency = 1
-tabs.Size = UDim2.new(1, -16, 0, 30)
-tabs.Position = UDim2.new(0, 8, 0, 4)
+tabs.Size = UDim2.new(1, -56, 0, 28)
+tabs.Position = UDim2.new(0, 28, 0, 64)
 tabs.ZIndex = 12
-tabs.Parent = shopItems
+tabs.Parent = shopPanel
+
+-- La lista baja para dejarle sitio a la barra. Se ajusta en codigo porque el panel se
+-- edita a mano en Studio y asi el script manda sobre las medidas de verdad.
+shopItems.Position = UDim2.new(0, 28, 0, 98)
+shopItems.Size = UDim2.new(1, -56, 1, -190)
 do
 	local l = Instance.new("UIListLayout")
 	l.FillDirection = Enum.FillDirection.Horizontal
@@ -193,6 +200,25 @@ do
 	l.Padding = UDim.new(0, 6)
 	l.Parent = tabs
 end
+
+-- La lista necesita un UIListLayout para APILAR las tarjetas. El ScrollingFrame de
+-- Items se edita a mano en Studio y no traia ninguno: sin esto las ocho tarjetas se
+-- dibujan unas encima de otras en (0,0) y solo se ve la ultima pintada.
+--
+-- Se guarda la referencia porque pintar() borra TODO lo que cuelgue de la lista, y el
+-- layout tambien colgaria de ahi: si se destruyera, la segunda vuelta se amontonarian
+-- todas otra vez y solo se veria un item.
+local listaLayout = shopItems:FindFirstChildOfClass("UIListLayout")
+if not listaLayout then
+	listaLayout = Instance.new("UIListLayout")
+	listaLayout.Name = "ListaLayout"
+	listaLayout.FillDirection = Enum.FillDirection.Vertical
+	listaLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	listaLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	listaLayout.Padding = UDim.new(0, 8)
+	listaLayout.Parent = shopItems
+end
+shopItems.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
 local function filtrar()
 	local lista = {}
@@ -205,8 +231,13 @@ local function filtrar()
 end
 
 local function pintar()
+	-- Todo lo que cuelgue de la lista es contenido: tarjetas y el aviso de "no hay nada".
+	-- Se borra sin mirar la clase; si se filtrara por Frame, el aviso (un TextLabel) se
+	-- acumularia uno encima de otro en cada repintado. El layout se salta: es estructura.
 	for _, h in ipairs(shopItems:GetChildren()) do
-		if h:IsA("Frame") then h:Destroy() end
+		if h ~= listaLayout then
+			h:Destroy()
+		end
 	end
 
 	local lista = filtrar()
@@ -232,13 +263,17 @@ local function pintar()
 		local mio = miCartera[item.id] == true
 		local puesto = miEquipado[item.slot] == item.id
 
+		-- ALTURA_CARD: cabe el texto de la habilidad, que es lo que mas crece. Con 168 el
+		-- precio se metia debajo del boton; con 212 habia medio cartel de hueco.
+		local ALTO = 176
+
 		local card = Instance.new("Frame")
 		card.Name = item.id
 		card.LayoutOrder = i
 		card.BackgroundColor3 = Color3.fromRGB(38, 46, 32)
 		card.BorderSizePixel = 0
 		card.ZIndex = 11
-		card.Size = UDim2.new(1, -8, 0, 168)
+		card.Size = UDim2.new(1, -8, 0, ALTO)
 		card.Parent = shopItems
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0, 14)
@@ -249,29 +284,35 @@ local function pintar()
 		stroke.Transparency = 0.5
 		stroke.Parent = card
 
-		-- el icono: el color del escudo si lo tiene, la rareza si no
+		-- Icono a la izquierda, con el nombre y la rareza a su derecha: gasta menos alto
+		-- que un icono centrado encima de todo.
+		-- El color lo trae el escudo; si no lo tienes puesto, sale en gris.
 		local iconColor = item.color or tinte
-		newLabel(card, { Name = "Icon", Position = UDim2.new(0, 0, 0, 10), Size = UDim2.new(1, 0, 0, 46),
-			Font = Enum.Font.GothamBold, TextSize = 38,
+		newLabel(card, { Name = "Icon", Position = UDim2.new(0, 10, 0, 12), Size = UDim2.new(0, 44, 0, 44),
+			Font = Enum.Font.GothamBold, TextSize = 30,
 			TextColor3 = puesto and iconColor or Color3.fromRGB(150, 155, 145),
 			Text = item.slot == "shield" and "\u{1F6E1}" or (item.slot == "victory" and "\u{1F451}" or "\u{1F4A7}") })
 
-		newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 56), Size = UDim2.new(1, -16, 0, 20),
-			Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Color3.new(1, 1, 1),
+		newLabel(card, { Name = "Name", Position = UDim2.new(0, 60, 0, 14), Size = UDim2.new(1, -68, 0, 22),
+			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
+			TextXAlignment = Enum.TextXAlignment.Left,
 			Text = item.name, TextTruncate = Enum.TextTruncate.AtEnd })
 
-		newLabel(card, { Name = "Raridad", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 16),
+		newLabel(card, { Name = "Raridad", Position = UDim2.new(0, 60, 0, 38), Size = UDim2.new(1, -68, 0, 16),
 			Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = tinte,
+			TextXAlignment = Enum.TextXAlignment.Left,
 			Text = (item.rarity or "comun"):gsub("^%l", string.upper) })
 
-		-- La habilidad, si la tiene. El texto lo genera ShieldAbilities desde los numeros.
-		newLabel(card, { Name = "Hab", Position = UDim2.new(0, 8, 0, 90), Size = UDim2.new(1, -16, 0, 30),
+		-- La habilidad, si la tiene. El texto lo genera ShieldAbilities desde los numeros,
+		-- asi que si se cambia un numero de equilibrio el texto cambia solo.
+		newLabel(card, { Name = "Hab", Position = UDim2.new(0, 12, 0, 64), Size = UDim2.new(1, -24, 0, 42),
 			Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Color3.fromRGB(190, 200, 175),
+			TextXAlignment = Enum.TextXAlignment.Left,
 			Text = item.abilityText or item.desc or "", TextWrapped = true,
 			TextYAlignment = Enum.TextYAlignment.Top })
 
-		-- precio o estado
-		newLabel(card, { Name = "Precio", Position = UDim2.new(0, 8, 1, -46), Size = UDim2.new(1, -16, 0, 18),
+		-- Precio o estado. Centrado a proposito: va encima de un boton del mismo ancho.
+		newLabel(card, { Name = "Precio", Position = UDim2.new(0, 10, 0, 108), Size = UDim2.new(1, -20, 0, 18),
 			Font = Enum.Font.GothamBold, TextSize = 13,
 			TextColor3 = mio and OK_COLOR or GOLD,
 			Text = puesto and "EN USO" or (mio and "EN CARTERA" or ("\u{1F4B0} " .. item.price)) })
@@ -279,42 +320,68 @@ local function pintar()
 		local boton
 		if puesto then
 			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 30),
+				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 32),
 				BackgroundColor3 = Color3.fromRGB(60, 70, 55), Text = "PUESTO", AutoButtonColor = false })
 		elseif mio then
 			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 30),
+				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 32),
 				BackgroundColor3 = tinte, Text = "EQUIPAR" })
 		else
 			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
-				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 30),
+				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 32),
 				BackgroundColor3 = Color3.fromRGB(200, 165, 60), Text = "COMPRAR" })
 		end
 
 		bindButton(boton)
 		boton.MouseButton1Click:Connect(function()
 			if puesto then return end
+			-- Solo se manda el id. No se pinta ningun "Enviado": el unico aviso que sale
+			-- es el del servidor, que es quien decide si la compra va o no.
 			if mio then
 				equipEvent:FireServer(item.id)
 			else
 				purchaseEvent:FireServer(item.id)
 			end
-			showToast("Enviado: " .. item.name, GOLD)
 		end)
+	end
+
+	-- Volver arriba al repintar: si no, cambiar de pestaña te deja a media lista y parece
+	-- que falten items.
+	shopItems.CanvasPosition = Vector2.new(0, 0)
+end
+
+-- Las pestañas se reparten el ancho de la barra. Se guardan para poder resaltar la
+-- activa: sin esto el usuario no sabe de que ranura esta viendo los items.
+local pestanas = {}
+local TAB_TONO = Color3.fromRGB(45, 55, 40)
+local TAB_ACTIVA = Color3.fromRGB(96, 116, 70)
+
+local function marcarPestana()
+	for _, r in ipairs(RANURAS) do
+		local b = pestanas[r.id]
+		if b then
+			local activa = (r.id == ranuraAbierta)
+			b.BackgroundColor3 = activa and TAB_ACTIVA or TAB_TONO
+			b.TextColor3 = activa and Color3.new(1, 1, 1) or Color3.fromRGB(175, 185, 165)
+			b.TextTransparency = activa and 0 or 0.35
+		end
 	end
 end
 
 for i, r in ipairs(RANURAS) do
 	local b = newButton(tabs, { Name = r.id, LayoutOrder = i,
-		Size = UDim2.new(0, 110, 1, 0), BackgroundColor3 = Color3.fromRGB(45, 55, 40),
+		Size = UDim2.new(1 / #RANURAS, -4, 1, 0), BackgroundColor3 = TAB_TONO,
 		Text = r.emoji .. "  " .. r.name })
+	pestanas[r.id] = b
 	bindButton(b)
 	b.MouseButton1Click:Connect(function()
 		ranuraAbierta = r.id
 		filtroTabla = "todos"
+		marcarPestana()
 		pintar()
 	end)
 end
+marcarPestana()
 
 -- Escuchar al servidor: el catalogo, la cartera y el resultado de comprar/equipar
 notifyEvent.OnClientEvent:Connect(function(kind, data)
@@ -334,7 +401,25 @@ updateEvent.OnClientEvent:Connect(function(d)
 	end
 end)
 
-requestEvent:FireServer(true) -- pide estado y catalogo de una vez
+-- Pide estado y catalogo, con reintentos.
+--
+-- Por que reintentar: un RemoteEvent disparado antes de que el otro extremo este escuchando
+-- se PIERDE, no se guarda. En Studio no hay DataStore, asi que el servidor termina de
+-- cargar el progreso en milisegundos y puede tener todo listo antes de que este script
+-- arranque. Con un solo disparo, la tienda se queda en "no hay nada" para siempre.
+-- Los reintentos paran en cuanto llega el catalogo, y el servidor limita a 1 s por peticion.
+local intentos = 0
+local function pedirCatalogo()
+	if catalogo and #catalogo > 0 then
+		return -- ya llego: no se sigue preguntando
+	end
+	intentos += 1
+	requestEvent:FireServer(true)
+	if intentos < 4 then
+		task.delay(1.5, pedirCatalogo)
+	end
+end
+pedirCatalogo()
 
 
 -- ============================================================

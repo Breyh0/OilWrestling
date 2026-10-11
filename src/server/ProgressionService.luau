@@ -214,6 +214,37 @@ local function queueSave(player)
 	end)
 end
 
+
+-- El catalogo que se manda al cliente para pintar la tienda. Se arma en el SERVIDOR a
+-- partir de CosmeticsShared: el cliente no tiene ni la lista ni los precios.
+-- Es una funcion local y no Service.GetCatalog porque loadPlayer la necesita y loadPlayer
+-- esta declarado ANTES que Service: si fuera un metodo, aqui dentro Service seria un
+-- global (nil) y el catalogo no se mandaria nunca.
+local function buildCatalog()
+	local lista = {}
+	for _, slot in ipairs(Cosm.Slots) do
+		for _, it in ipairs(Cosm.Items[slot]) do
+			lista[#lista+1] = {
+				id = it.id,
+				slot = it.slot or slot,
+				name = it.name,
+				price = it.price,
+				rarity = it.rarity,
+				desc = it.desc,
+				descBox = it.dur,
+				-- el aspecto lo lee el cliente para el color y la rareza
+				color = (Cosm.ShieldSkin(it.id) or {}).color,
+				hasAbility = ShieldAbilities.Get(it.id) ~= nil,
+				abilityText = ShieldAbilities.Describe(it.id),
+			}
+		end
+	end
+	return lista
+end
+
+-- Service.GetCatalog se asigna mas abajo, ya con la tabla Service declarada. Aqui solo
+-- existe buildCatalog: asignar aqui seria usar Service antes de declararlo.
+
 local function loadPlayer(player, s)
 	local ok, res
 	if store then
@@ -240,7 +271,15 @@ local function loadPlayer(player, s)
 		warn("[Progression] No se pudo cargar a", player.Name, res)
 		notify(player, "warn", { text = "No se pudo cargar tu progreso. Esta sesi\u{00F3}n no se guardar\u{00E1}." })
 	end
+	-- Publicar los atributos ANTES del primer push: si no, el cliente recibe el estado de
+	-- la cartera sin saber que escudo lleva puesto, y el VFX no tendria que pintar nada.
+	applyCosmeticAttributes(player, s)
 	push(player)
+	-- El catalogo se manda aqui, sin esperar a que el cliente lo pida. Si se mandara solo
+	-- por respuesta a RequestProgression, se perderia: un RemoteEvent disparado antes de
+	-- que el servidor conecte su manejador se pierde para siempre, y el script del cliente
+	-- puede cargarse antes que ProgressionService.
+	notify(player, "catalog", { items = buildCatalog() })
 end
 
 -- Sesion lista para recibir recompensas (aplica los reinicios si tocan).
@@ -367,6 +406,8 @@ function Service.GetData(player)
 	return s and Logic.DeepCopy(s.data) or nil
 end
 
+Service.GetCatalog = buildCatalog
+
 -- ============================================================
 -- Cosmeticos: propiedad, compra y equipado
 -- Capa 4 de la tienda. AQUI es donde se decide: el cliente solo manda un id.
@@ -393,30 +434,6 @@ function Service.GetCosmetics(player)
 		return nil
 	end
 	return Logic.DeepCopy(s.data.cosm)
-end
-
--- El catalogo que se manda al cliente para pintar la tienda. Se arma en el SERVIDOR a
--- partir de CosmeticsShared: el cliente no tiene ni la lista ni los precios.
-function Service.GetCatalog()
-	local lista = {}
-	for _, slot in ipairs(Cosm.Slots) do
-		for _, it in ipairs(Cosm.Items[slot]) do
-			lista[#lista+1] = {
-				id = it.id,
-				slot = it.slot or slot,
-				name = it.name,
-				price = it.price,
-				rarity = it.rarity,
-				desc = it.desc,
-				descBox = it.dur,
-				-- el aspecto lo lee el cliente para el color y la rareza
-				color = (Cosm.ShieldSkin(it.id) or {}).color,
-				hasAbility = ShieldAbilities.Get(it.id) ~= nil,
-				abilityText = ShieldAbilities.Describe(it.id),
-			}
-		end
-	end
-	return lista
 end
 
 -- Regala un cosmetico (devuelve true si era nuevo)
@@ -539,6 +556,18 @@ Players.PlayerRemoving:Connect(onPlayerRemoving)
 for _, p in ipairs(Players:GetPlayers()) do
 	task.spawn(onPlayerAdded, p)
 end
+
+-- Cada reaparecer crea un personaje NUEVO, y los atributos viven en el personaje, no en el
+-- jugador. Sin esto, OilBlockVFXClient solo encontraria CosShield en el primer personaje
+-- y el escudo se quedaria sin pintar al morir y resucitar.
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(char)
+		local s = sessions[player]
+		if s then
+			applyCosmeticAttributes(player, s)
+		end
+	end)
+end)
 
 -- El cliente pide su estado al arrancar (evita perder el primer envio). La misma llamada
 -- sirve para pedir el catalogo de la tienda: asi hay UN solo remoto de este tipo y un solo
