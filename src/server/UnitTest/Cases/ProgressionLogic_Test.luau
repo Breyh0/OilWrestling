@@ -7,6 +7,7 @@
 return function(t)
 	local Logic = require(game:GetService("ServerScriptService"):WaitForChild("ProgressionLogic"))
 	local Shared = require(game:GetService("ReplicatedStorage"):WaitForChild("ProgressionShared"))
+	local Cosm = require(game:GetService("ReplicatedStorage"):WaitForChild("CosmeticsShared"))
 	local expect = t.expect
 	local C = Logic.Config
 
@@ -495,5 +496,107 @@ return function(t)
 		for _, row in ipairs(snap.missions) do
 			expect.truthy(row.progress <= row.goal)
 		end
+	end)
+
+	-- ============================================================
+	-- Cosmeticos (gestos, ring-out y escudos). Capa 3 de docs/DATOS.md
+	-- ============================================================
+
+	t.test("Un jugador viejo sin cosm recibe el campo y los gratuitos", function()
+		-- ESTE es el cuarto toque: un jugador que ya tiene progreso guardado y nunca vio
+		-- el campo cosm no puede romperse al cargar sus datos.
+		local d = Logic.Reconcile({ schema = 3, xp = 900, coins = 5000, level = 4,
+			day = 20454, week = 1, stats = { wins = 10, matches = 12 } })
+		expect.truthy(d.cosm ~= nil)
+		expect.truthy(type(d.cosm.owned) == "table")
+		expect.truthy(type(d.cosm.eq) == "table")
+		expect.equal(d.cosm.owned.escudo_azul, true)      -- el escudo base es gratis
+		expect.equal(d.cosm.owned.ave_cesar, true)        -- gesto base
+		expect.equal(d.cosm.owned.splash_clasico, true)    -- ring-out base
+		expect.equal(d.cosm.eq.shield, "escudo_azul")
+		expect.equal(d.cosm.eq.victory, "ave_cesar")
+		-- y no se le ha perdido nada de lo que ya tenia
+		expect.equal(d.coins, 5000)
+		expect.equal(d.stats.wins, 10)
+	end)
+
+	t.test("Reconcile limpia lo que ya no existe en el catalogo", function()
+		local d = Logic.Reconcile({ schema = 3,
+			cosm = { owned = { escudo_azul = true, ESCUDO_QUE_YA_NO_EXISTE = true, item_borroso = true },
+			         eq = { shield = "item_borroso" } } })
+		expect.equal(d.cosm.owned.ESCUDO_QUE_YA_NO_EXISTE, nil)
+		expect.equal(d.cosm.owned.item_borroso, nil)
+		expect.equal(d.cosm.owned.escudo_azul, true)
+		-- equipado invalido: cae al predeterminado de su ranura
+		expect.equal(d.cosm.eq.shield, "escudo_azul")
+	end)
+
+	t.test("Reconcile no deja equipado algo que no es tuyo", function()
+		local d = Logic.Reconcile({ schema = 3, coins = 9999,
+			cosm = { owned = { escudo_azul = true }, eq = { shield = "escudo_sol" } } })
+		-- escudo_sol es de pago y no se ha comprado: no puede estar equipado
+		expect.equal(d.cosm.eq.shield, "escudo_azul")
+	end)
+
+	t.test("Comprar descuenta monedas y da el cosmetico", function()
+		local d = fresh()
+		d.coins = 1000
+		local ok, motivo = Logic.BuyCosmetic(d, "escudo_sol")
+		expect.equal(ok, true)
+		expect.equal(motivo, "ok")
+		expect.equal(d.cosm.owned.escudo_sol, true)
+		expect.equal(d.coins, 1000 - Cosm.Get("escudo_sol").price)
+		-- no se puede comprar dos veces
+		local ok2, motivo2 = Logic.BuyCosmetic(d, "escudo_sol")
+		expect.equal(ok2, false)
+		expect.equal(motivo2, "owned")
+	end)
+
+	t.test("Comprar sin monedas suficientes no toca nada", function()
+		local d = fresh()
+		d.coins = 1
+		local ok, motivo = Logic.BuyCosmetic(d, "escudo_espectral")
+		expect.equal(ok, false)
+		expect.equal(motivo, "coins")
+		expect.equal(d.cosm.owned.escudo_espectral, nil)
+		expect.equal(d.coins, 1)
+	end)
+
+	t.test("Comprar algo que no existe se rechaza por desconocido", function()
+		local d = fresh()
+		local ok, motivo = Logic.BuyCosmetic(d, "ESTE_NO_EXISTE")
+		expect.equal(ok, false)
+		expect.equal(motivo, "unknown")
+	end)
+
+	t.test("Equipar exige tenerlo en cartera", function()
+		local d = fresh()
+		local ok, motivo = Logic.EquipCosmetic(d, "escudo_constelacion")
+		expect.equal(ok, false)
+		expect.equal(motivo, "not_owned")
+
+		d.cosm.owned.escudo_constelacion = true
+		local ok2, motivo2 = Logic.EquipCosmetic(d, "escudo_constelacion")
+		expect.equal(ok2, true)
+		expect.equal(motivo2, "ok")
+		expect.equal(d.cosm.eq.shield, "escudo_constelacion")
+	end)
+
+	t.test("Regalo concede una vez y no cobra", function()
+		local d = fresh()
+		local coins = d.coins
+		expect.equal(Logic.GrantCosmetic(d, "escudo_laureles"), true)
+		expect.equal(d.coins, coins)
+		expect.equal(d.cosm.owned.escudo_laureles, true)
+		expect.equal(Logic.GrantCosmetic(d, "escudo_laureles"), false)
+	end)
+
+	t.test("Snapshot expone los cosmeticos para el cliente", function()
+		local d = fresh()
+		d.cosm.owned.escudo_sol = true
+		d.cosm.eq.shield = "escudo_sol"
+		local snap = Logic.Snapshot(d, T)
+		expect.equal(snap.cosm.owned.escudo_sol, true)
+		expect.equal(snap.cosm.eq.shield, "escudo_sol")
 	end)
 end
