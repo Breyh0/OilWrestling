@@ -45,6 +45,9 @@ jobs:
           fi
           echo "OK"
 
+      - name: El manifiesto de escena no se ha editado a mano
+        run: python tools/verificar_escena.py
+
   avisa:
     name: Lo que la CI no puede comprobar
     needs: [preflight]

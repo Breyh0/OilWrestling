@@ -109,10 +109,12 @@ Método completo en `docs/WORKFLOW.md`; skill operativa en `.opencode/skills/luc
 |---|---|
 | `docs/MEMORY.md` | **Fuente de verdad.** Gotchas, estado, reglas del equipo |
 | `docs/WORKFLOW.md` | Método de trabajo: ciclo, puerta de calidad, ramas, code review |
+| `docs/ESCENA.md` | La capa que no está en git: por qué, cómo se vigila, qué ha encontrado |
 | `docs/DATOS.md` | Contrato de datos del jugador: los 4 toques, esquema y migraciones |
 | `docs/OILCOMBAT.md` | Mapa técnico del combate |
 | `docs/PREFLIGHT.md` | Reglas del preflight de Luau y sus autotests |
 | `CHANGELOG.md` | Qué se publica en cada versión |
+| `escena/MANIFIEST-ESCENA.md` | Inventario versionado de la escena, con huella |
 | `checkpoint/2026-10-10-estado-del-lugar/` | Trabajo del compañero rescatado del place, con hashes |
 
 Skills: `lucha-workflow` (reglas duras), `lucha-qa` (verificación), `lucha-ramas`
@@ -126,6 +128,29 @@ ajustes del repo.
 
 Grafo de conocimiento en `graphify-out/` (local, gitignored). Actualizado el 2026-10-10:
 **494 nodos, 957 aristas, 40 comunidades**. Se refresca con `/graphify . --update`.
+
+## Escena (2026-10-10)
+
+`Workspace`, `StarterGui` y `SoundService` **no están en git**. El archivo del lugar no se
+versiona a propósito: lleva los scripts dentro (dos fuentes de verdad), no se puede
+diffear y no tiene merge. `*.rbxl` y `*.rbxlx` están en `.gitignore` para que nadie lo
+suba por error.
+
+- **La red de verdad es publicar el place**: el historial de versiones de Roblox. Sin
+  publicar, la escena no existe.
+- **Para detectarla**: `escena/inventario.luau` genera `escena/MANIFIEST-ESCENA.md`, que sí
+  está en git. `python tools\verificar_escena.py` comprueba que nadie lo editó a mano.
+- Huella del estado del 2026-10-10: `3399760856`.
+
+Hallazgos del primer inventario, que nadie tenía registrados:
+
+- ⚠️ **El ring se movió al origen**: `OilArena` pasó de `(4, 6.1, -36)` a `(0, 6.1, 0)`, y
+  con él `GoldFrame`, `MarbleTier` y `PedestalBase`. **No rompe el juego**: `OilPhysics` y
+  `OilCombat` leen el ring dinámicamente y hay un `SpawnLocation` real
+  (`BroadcastBooth.BoothSpawn2`), así que el fallback de `getLobbyCFrame()` no se usa.
+  Pero el `checkpoint/` del 10 de octubre está desactualizado en ese dato.
+- **3 `Part` sueltos flotando a ~3000 studs**, anclados y con colisión. No rompen nada pero
+  son basura de alguna prueba. **No borrar sin preguntar**: pueden ser del compañero.
 
 ## Sistema de sonido (2026-10-10, `src/client/SoundDirector.client.luau`)
 

@@ -44,6 +44,7 @@ consola**, una partida jugada de principio a fin y el visto bueno del usuario.
 |---|---|
 | [`docs/WORKFLOW.md`](docs/WORKFLOW.md) | **El método.** Ciclo, puertas, ramas, code review |
 | [`docs/MEMORY.md`](docs/MEMORY.md) | **Fuente de verdad.** Gotchas, estado, reglas del equipo |
+| [`docs/ESCENA.md`](docs/ESCENA.md) | La capa que no está en git: por qué y cómo se vigila |
 | [`docs/DATOS.md`](docs/DATOS.md) | Cómo tocar los datos del jugador sin romperlos |
 | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) | Qué caza el preflight y de qué bug salió cada regla |
 | [`docs/OILCOMBAT.md`](docs/OILCOMBAT.md) | Mapa técnico del combate |
