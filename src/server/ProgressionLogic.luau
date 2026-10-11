@@ -5,6 +5,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = require(ReplicatedStorage:WaitForChild("ProgressionShared"))
+local Cosm = require(ReplicatedStorage:WaitForChild("CosmeticsShared"))
 
 local Logic = {}
 Logic.SCHEMA = 3
@@ -61,6 +62,7 @@ function Logic.DefaultData()
 		mp = {}, claimed = {},     -- progreso y reclamos de las misiones diarias
 		wp = {}, wclaimed = {},    -- progreso y reclamos de las semanales
 		stats = { matches = 0, wins = 0, ringouts = 0, parries = 0, streak = 0, bestStreak = 0 },
+		cosm = { owned = {}, eq = {} }, -- cosmeticos: ver Logic.ReconcileCosmetics
 	}
 end
 
@@ -136,6 +138,8 @@ function Logic.Reconcile(data)
 		end
 	end
 	data.m_wins, data.m_ringouts, data.m_parrys = nil, nil, nil
+
+	Logic.ReconcileCosmetics(data)
 
 	data.schema = Logic.SCHEMA
 	return data
@@ -332,6 +336,84 @@ local function missionRows(list, progress, claimed)
 	return rows
 end
 
+-- ============================================================
+-- Cosmeticos (gestos de victoria, efectos de ring-out y escudos)
+-- Datos: d.cosm = { owned = { [id] = true }, eq = { [ranura] = id } }
+--
+-- Portado del rescate del lugar (checkpoint/2026-10-11-escudos, FNV 220074352, verificado
+-- byte a byte). La logica es la del original: el servidor es el unico que compra, el
+-- cliente nunca manda un precio.
+-- ============================================================
+function Logic.ReconcileCosmetics(d)
+	local c = (type(d.cosm) == "table") and d.cosm or {}
+	local owned, eq = {}, {}
+	if type(c.owned) == "table" then
+		for id, v in pairs(c.owned) do
+			-- solo se conserva lo que sigue existiendo en el catalogo
+			if v == true and Cosm.ById[id] then
+				owned[id] = true
+			end
+		end
+	end
+	for _, slot in ipairs(Cosm.Slots) do -- los gratuitos siempre son tuyos
+		for _, it in ipairs(Cosm.Items[slot]) do
+			if it.price == 0 then
+				owned[it.id] = true
+			end
+		end
+	end
+	local ce = (type(c.eq) == "table") and c.eq or {}
+	for _, slot in ipairs(Cosm.Slots) do
+		local id = ce[slot]
+		-- equipado tiene que ser de su ranura Y ser tuyo; si no, al predeterminado
+		if type(id) == "string" and Cosm.IsValid(slot, id) and owned[id] then
+			eq[slot] = id
+		else
+			eq[slot] = Cosm.Defaults[slot]
+		end
+	end
+	d.cosm = { owned = owned, eq = eq }
+end
+
+-- Regalo (codigos, eventos, recompensas). Devuelve true si es nuevo para el jugador.
+function Logic.GrantCosmetic(d, id)
+	if not Cosm.Get(id) or d.cosm.owned[id] then
+		return false
+	end
+	d.cosm.owned[id] = true
+	return true
+end
+
+-- Compra con monedas. Devuelve (ok, motivo): "ok" | "unknown" | "owned" | "coins"
+function Logic.BuyCosmetic(d, id)
+	local it = Cosm.Get(id)
+	if not it then
+		return false, "unknown"
+	end
+	if d.cosm.owned[id] then
+		return false, "owned"
+	end
+	if d.coins < it.price then
+		return false, "coins"
+	end
+	addCoins(d, -it.price)
+	d.cosm.owned[id] = true
+	return true, "ok"
+end
+
+-- Equipa un cosmetico que ya es tuyo en su ranura. Devuelve (ok, motivo): "ok" | "unknown" | "not_owned"
+function Logic.EquipCosmetic(d, id)
+	local it = Cosm.Get(id)
+	if not it then
+		return false, "unknown"
+	end
+	if not d.cosm.owned[id] then
+		return false, "not_owned"
+	end
+	d.cosm.eq[it.slot] = id
+	return true, "ok"
+end
+
 function Logic.Snapshot(d, now)
 	return {
 		level = d.level, xp = d.xp, xpReq = Shared.XPForLevel(d.level), maxLevel = Shared.MaxLevel,
@@ -340,6 +422,7 @@ function Logic.Snapshot(d, now)
 		streak = d.stats.streak, bestStreak = d.stats.bestStreak,
 		wins = d.stats.wins, matches = d.stats.matches,
 		firstWin = { available = d.claimed.firstwin ~= true, xp = CONFIG.FirstWinXP, coins = CONFIG.FirstWinCoins },
+		cosm = { owned = d.cosm.owned, eq = d.cosm.eq },
 		missions = missionRows(Shared.DailyMissions(d.day), d.mp, d.claimed),
 		bonus = Shared.DailyBonus, bonusDone = d.claimed.bonus == true,
 		resetIn = Shared.SecondsToDayReset(now),
