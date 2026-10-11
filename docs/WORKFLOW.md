@@ -154,15 +154,31 @@ Los cinco puntos donde de verdad se rompen cosas en este proyecto:
 ### La puerta automática
 
 Hay una CI en `.github/workflows/quality.yml` que corre en cada push y en cada PR a
-`main`, y ejecuta el preflight y sus autotests. Es una red, no una garantía:
+`main`, y ejecuta el preflight y sus autotests. Corre desde el 2026-10-10.
 
-- **La CI no juega.** Los 46 tests de Luau necesitan Roblox, así que siguen siendo
-  manuales. Tampoco comprueba cómo suena ni cómo se ve nada.
-- Lo que la CI sí evita es que un error tonto llegue al playtest.
+Lo que comprueba: preflight de código, docs y skills · autotests de las propias reglas ·
+que no haya binarios versionados · que el manifiesto de escena no se haya editado a mano.
 
-Para que sea una puerta de verdad hay que **proteger `main`** en los ajustes del repo
-(Settings → Branches → Add rule): exigir pull request y que la CI pase antes de mergear.
-Sin eso, la puerta depende de que nadie tenga prisa.
+Lo que **no** puede: **no juega.** Los 46 tests de Luau necesitan Roblox, así que siguen
+siendo manuales. Tampoco comprueba cómo suena ni cómo se ve nada. Es una red, no una
+garantía.
+
+Además, `main` está **protegido con un ruleset** en GitHub: los status checks son
+obligatorios, la bypass list está vacía (nadie se los salta, ni siquiera el dueño) y la
+rama no se puede borrar. En la práctica, **`main` ya no se actualiza con `git push`
+directo**: hay que ir por pull request.
+
+```sh
+git checkout main && git pull
+git checkout -b feature/<nombre>
+# ... trabajar ...
+git push -u origin feature/<nombre>
+# Al subir la rama, GitHub ofrece abrir el PR. Se revisa y se mergea.
+```
+
+Si un push directo a `main` sale rechazado con un error de *required status checks* o de
+*changes must be made through a pull request*, **no es un fallo**: la regla está
+funcionando.
 
 ### Publicar una versión
 
