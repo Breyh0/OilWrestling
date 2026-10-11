@@ -154,7 +154,7 @@ Los cinco puntos donde de verdad se rompen cosas en este proyecto:
 ### La puerta automática
 
 Hay una CI en `.github/workflows/quality.yml` que corre en cada push y en cada PR a
-`main`, y ejecuta el preflight y sus autotests. Corre desde el 2026-10-10.
+`main`, y ejecuta el preflight y sus autotests.
 
 Lo que comprueba: preflight de código, docs y skills · autotests de las propias reglas ·
 que no haya binarios versionados · que el manifiesto de escena no se haya editado a mano.
@@ -163,30 +163,42 @@ Lo que **no** puede: **no juega.** Los 46 tests de Luau necesitan Roblox, así q
 siendo manuales. Tampoco comprueba cómo suena ni cómo se ve nada. Es una red, no una
 garantía.
 
-Además hay un **ruleset en GitHub** llamado `main protegida`, con la *bypass list* vacía
-(nadie se lo salta, ni siquiera el dueño). **Estado a 2026-10-11: el ruleset existe y
-está activo, pero se creó sin reglas, así que no protege nada todavía.** Sin las reglas
-puestas, un `git push` directo a `main` sigue entrando.
+**`main` está protegida** con un ruleset de GitHub llamado `main protegida`, activo desde
+el 2026-10-11, y **verificado con un push de prueba que GitHub rechazó** (`GH013`):
 
-Lo que hay que activar (Settings → Rulesets → `main protegida`):
+| Regla | Efecto |
+|---|---|
+| `deletion` | Nadie borra `main` |
+| `non_fast_forward` | Nadie la reescribe con force-push |
+| `pull_request` | **Todo cambio entra por pull request**, con 0 aprobaciones requeridas |
+| `required_status_checks` | Los 3 jobs de la CI tienen que pasar antes de mergear |
 
-- **Target branches** → `Branch` → `main`
-- ☑ **Require a pull request before merging** (required approvals 1, con *do not allow
-  bypassing*). **Esta es la que cierra la puerta**: los status checks, solos, no bloquean
-  un push directo.
-- ☑ **Require status checks to pass** → los tres jobs:
-  `Preflight de Luau y documentación`, `Higiene del repo`, `Lo que la CI no puede comprobar`
+La *bypass list* está **vacía**: nadie se salta la regla, tampoco el dueño.
 
-Comprobado empíricamente: con el ruleset vacío, `git push origin rama:main` **entra**.
-Con la regla del PR puesto, tiene que salir rechazado con *required status checks*.
+**0 aprobaciones y no 1 a propósito**: GitHub no deja aprobar tu propio pull request, así
+que con 1 te bloqueabas a ti solo y la regla acabaría desactivándose. Con 0 el flujo es:
+subo la rama → abres el PR → la CI pasa → Merge. Cuando el compañero empiece a trabajar en
+el repo, se sube a 1.
+
+Lo que queda verificado y lo que no:
+
+- Verificado: el push directo a `main` se rechaza; los tres checks de la CI existen y pasan; `main` está protegida con las cuatro reglas.
+- Pendiente de probar en la práctica: el flujo completo rama → PR → CI → merge, que es lo que se acaba de montar.
+
+El flujo de trabajo:
 
 ```sh
 git checkout main && git pull
 git checkout -b feature/<nombre>
 # ... trabajar ...
 git push -u origin feature/<nombre>
-# Al subir la rama, GitHub ofrece abrir el PR. Se revisa y se mergea.
 ```
+
+Luego se abre el PR (GitHub lo ofrece al subir la rama, o `gh pr create`), la CI corre y
+se mergea cuando está en verde.
+
+Si un push directo a `main` sale rechazado con `GH013` o *changes must be made through a
+pull request*, **no es un fallo**: la regla está funcionando.
 
 ### Publicar una versión
 

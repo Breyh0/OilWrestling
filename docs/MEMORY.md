@@ -123,8 +123,29 @@ Skills: `lucha-workflow` (reglas duras), `lucha-qa` (verificación), `lucha-rama
 
 Puerta automática: `.github/workflows/quality.yml` corre preflight + autotests en cada
 push y PR a `main`. **No sustituye al playtest**: los 46 tests de Luau necesitan Roblox y
-siguen siendo manuales. Para que sea puerta de verdad hay que proteger `main` en los
-ajustes del repo.
+siguen siendo manuales.
+
+**`main` está protegida** (ruleset `main protegida`, activo y **verificado** el
+2026-10-11 con un push de prueba que GitHub rechazó con `GH013`):
+
+| Regla | Efecto |
+|---|---|
+| `deletion` | Nadie borra `main` |
+| `non_fast_forward` | Nadie la reescribe con force-push |
+| `pull_request` | Todo cambio entra por PR, con 0 aprobaciones requeridas |
+| `required_status_checks` | Los 3 jobs de la CI tienen que pasar antes de mergear |
+
+Bypass list vacía: nadie se salta la regla, ni el dueño. **0 aprobaciones y no 1** porque
+GitHub no deja aprobar tu propio PR; con 1 te bloqueabas solo. Cuando el compañero empiece
+a trabajar en el repo, se sube a 1.
+
+Consecuencia práctica: **`main` ya no se actualiza con `git push` directo**. Se sube la
+rama y se mergea el PR. `gh` (GitHub CLI) está instalado en la máquina y autenticado como
+`Breyh0`, así que el PR se puede abrir y mergear con `gh pr`.
+
+Detalle técnico que costó tiempo: los status checks **no bloquean un `git push` directo**
+por sí solos. La regla que lo cierra es `pull_request`. Probado: con el ruleset vacío el
+push entraba; con las cuatro reglas, rechazado.
 
 Grafo de conocimiento en `graphify-out/` (local, gitignored). Actualizado el 2026-10-10:
 **494 nodos, 957 aristas, 40 comunidades**. Se refresca con `/graphify . --update`.
