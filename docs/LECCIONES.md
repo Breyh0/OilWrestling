@@ -143,6 +143,42 @@ No son culpa del código, pero cada uno costó un viaje.
 
 ---
 
+## 6. `git reset --hard` se come el trabajo sin commitear
+
+**Qué pasó.** El 2026-10-11. Edité `docs/MEMORY.md` (una sección entera de rendimiento),
+y acto seguido, antes de commitear, hice lo de siempre al abrir una rama:
+
+```powershell
+git checkout main
+git fetch origin
+git reset --hard origin/main
+git checkout -b docs/lecciones-ia
+```
+
+El `reset --hard` no avisa de nada: **se llevó la edición de `MEMORY.md` sin más**. El PR
+salió con 1 archivo en vez de 2, y por eso me enteré. La sección no llegó a existir en el
+historial.
+
+**Por qué.** `git reset --hard` descarta el índice **y** el directorio de trabajo. Es
+inofensivo cuando todo está commiteado, que es lo que asumí. Y asumí porque en la
+sesión anterior había funcionado: la customización no distingue entre "el árbol está
+limpio" y "el árbol tiene cosas que me importan".
+
+**Qué se hace ahora.**
+
+1. `git status --short` **antes** de cualquier comando destructivo. Si hay `M` o `??`, no
+   se ejecuta.
+2. El orden correcto es: `git pull` → `git checkout -b rama` → trabajar → `git add -A` →
+   `git commit`. **Crear la rama no obliga a resetear nada.**
+3. Si de verdad hay que sincronizar con trabajo sin commitear, `git stash` primero. Nunca
+   `reset --hard` "porque seguro que no tengo nada".
+
+La regla general: los comandos que borran sin preguntar (`reset --hard`, `checkout --`,
+`clean -fd`) son los únicos que hay que rodear de una comprobación previa. Todo lo demás
+falla de forma visible.
+
+---
+
 ## Cómo se usa este documento
 
 Al empezar una sesión, leerlo **antes** de tocar nada. Y cuando pase algo de lo de aquí,
