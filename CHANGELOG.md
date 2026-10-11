@@ -8,6 +8,20 @@ desde el punto de vista de quien juega.
 
 ---
 
+## Sin publicar — escudos (capa de datos, todavía invisible)
+
+**Añadido**
+- Catálogo de escudos y habilidades recuperado del lugar y reconstruido. **El jugador no
+  ve nada todavía**: no hay tienda, ni cajas, ni habilidad activa. Es deliberado; conectar
+  el motor al combate es otra rama con su propio playtest.
+
+**Arreglado**
+- Un `typo` en el test del lugar (`fuerzas` escrito con `z` y usado con `t`) que hacía que
+  **ese test no llegara a pasar nunca**. En Luau un nombre mal escrito no da error: vale
+  `nil` y revienta más tarde.
+
+---
+
 ## [v0.4.0] — sistema de sonido
 
 **Añadido**
