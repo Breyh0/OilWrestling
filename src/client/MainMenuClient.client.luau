@@ -103,6 +103,10 @@ local requestEvent = ReplicatedStorage:WaitForChild("RequestProgression")
 local notifyEvent = ReplicatedStorage:WaitForChild("MissionNotify")
 local updateEvent = ReplicatedStorage:WaitForChild("UpdateProgression")
 
+-- El escudo de la tarjeta lo dibuja el modulo del propio escudo del bloqueo. Es la misma
+-- pieza que ves delante del luchador cuando bloqueas, en pequeno.
+local OilBlockVFX = require(ReplicatedStorage:WaitForChild("OilBlockVFX"))
+
 local RARITY_COLOR = {
 	comun = Color3.fromRGB(190, 190, 180),
 	poco_comun = Color3.fromRGB(120, 200, 120),
@@ -272,10 +276,13 @@ local function pintar()
 		stroke.Transparency = puesto and 0.2 or 0.6
 		stroke.Parent = card
 
-		-- Icono centrado de 44 px, blanco. Como en el original.
-		newLabel(card, { Name = "Icon", Position = UDim2.new(0, 0, 0, 12), Size = UDim2.new(1, 0, 0, 56),
-			Font = Enum.Font.GothamBold, TextSize = 44, TextColor3 = Color3.new(1, 1, 1),
-			Text = item.slot == "shield" and "\u{1F6E1}" or (item.slot == "victory" and "\u{1F451}" or "\u{1F4A7}") })
+		-- Icono: el MISMO escudo del bloqueo, en miniatura y con el color de este escudo.
+		-- Lo construye OilBlockVFX, que es donde vive el diseno, para que no haya dos
+		-- definiciones del mismo escudo que se separen con el tiempo. Por eso los escudos
+		-- ya no son un emoji plano igual para todos: cada uno es el suyo.
+		-- Los gestos y los efectos de ring-out no son escudos, asi que usan el mismo
+		-- dibujo teñido con su rareza, para que la lista no quede media vacia.
+		OilBlockVFX.buildIcon(card, colorItem, 56)
 
 		newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 22),
 			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
