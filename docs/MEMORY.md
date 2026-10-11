@@ -240,6 +240,40 @@ Las IAs de los dos compañeros cargan estas skills automáticamente desde el rep
 
 **Grafo de conocimiento** (graphify, `graphify-out/` va en `.gitignore`): 318 nodos / 621 aristas / 38 comunidades. Preguntas de arquitectura ("qué llama a OilCombat.perform", "qué toca el suelo aceitoso") → responder con `graphify query "..."` en vez de releer 1400 líneas. `OILCOMBAT.md` es el puente documental→código (3 de sus 6 aristas cruzan de comunidad).
 
+## Escudos y habilidades (2026-10-11, `src/shared/CosmeticsShared.luau` + `src/shared/ShieldAbilities.luau`)
+
+Rescate y reconstruccion del sistema de escudos que `supergamertth8` dejo dormido en
+`ServerStorage`. Detalle completo en `checkpoint/2026-10-11-escudos/MANIFIEST.md`.
+
+**Estado: capa de DATOS. NO toca el combate.** Las habilidades siguen sin conectar a
+`OilCombat` a proposito; el enganche (`A.ForPlayer(jugador)`) es una rama aparte.
+
+- `CosmeticsShared`: catalogo puro (sin `Instance`, sin servicios). Slots `victory`,
+  `ringout`, `shield`. Anade `CosShield` (aspecto por escudo), `Boxes`, `RareShields()`,
+  `ShieldsOfBox()` y `ShieldSkin()`. Los 6 gestos y los 6 efectos de ring-out son los
+  originales, intactos, y hay un test que lo comprueba.
+- `ShieldAbilities`: portado del lugar **sin tocar la logica**. Solo cambian la
+  codificacion (Latin-1 -> UTF-8) y dos valores, explicados en su cabecera.
+- `CosShield` se reconstruyo. Los **ids, nombres, rarezas y el reparto raridad/habilidad
+  NO son inventados**: salen de `ShieldAbilities` y de su test. Lo que si se perdio y se
+  decidio aqui son los **PRECIOS** y los **COLORES**, y estan marcados `-- PROPUESTA`.
+
+### Gotchas nuevas
+
+- **Un `typo` en un nombre es un global, y un global es `nil`.** El test del lugar tenia
+  `fuerzas` (con Z) y usaba `fuertes` (con T). Luau no protesta: revienta mas tarde, en el
+  `table.insert`, con `invalid argument #1 to 'insert' (table expected, got nil)`. El
+  preflight no lo pilla porque el programa es Luau valido. La regla `adelantada` del
+  preflight cubre el orden, no el nombre: **faltaria una regla de "local no usado /
+  global no declarado"**.
+- **Rojo se puede cologar sin avisar**: el candado `__Rojo_SessionLock` sigue puesto y los
+  archivos dejan de bajar. Se detecta con el barrido de hashes (el lugar no coincide con
+  `src/`). Rodea documentado: escribir `Source` con `execute_luau` y **verificar leyendo de
+  vuelta**; el disco sigue siendo la verdad.
+- Los archivos rescatados del lugar estan en **Latin-1**, no en UTF-8, y a veces mezclados
+  (uno de cada dos). Se verifica por hash, nunca por tamano.
+- `require` **cachea**: para probar un cambio hay que arrancar un playtest nuevo.
+
 ## TODO / Known issues
 
 ### Rendimiento: MEDIDO el 2026-10-11 (cerrado, con resultados)

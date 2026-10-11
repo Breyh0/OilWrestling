@@ -88,6 +88,38 @@ Dos cosas salen de esa tabla:
 Al reconectar esto habra que cambiar esa linea del test a `6`. En la copia se deja tal
 cual: un rescate es una copia literal y no se arregla nada dentro de `checkpoint/`.
 
+## 2ter. El test del original NUNCA PASO (encontrado al ejecutarlo 2026-10-11)
+
+Al portar el test a `src/` y ejecutarlo por primera vez, revienta:
+
+```
+[FAIL] ShieldAbilities_Test > Las rares son utiles pero ningun escudo agota su tope
+       | ShieldAbilities_Test:111: invalid argument #1 to 'insert' (table expected, got nil)
+```
+
+No es un error de la copia: **esta en el original, en la linea 106**:
+
+```lua
+local fuerzas = {}              -- se declara con Z
+table.insert(fuertes, s)        -- se usa con T
+```
+
+En Luau un nombre no declarado **no da error**: vale `nil` en silencio, y revienta mas
+tarde, cuando ya se usa. Por eso el preflight no lo ve (el programa es Luau valido) y por
+eso el trabajo de los escudos se quedo parado sin que nadie supiera por que: **ese test
+llevo tiempo fallando y nadie lo ejecutaba.**
+
+Por cierto, el preflight tiene una regla llamada `adelantada` que avisa de referenciar un
+`local` declarado mas abajo. Esta vez es al reves (typo en vez de orden), asi que no la
+cogio. **Un nombre mal escrito es un global, y un global es `nil`: mismo peligro, otra
+regla.**
+
+La copia del checkpoint se queda con la erre. En el codigo vivo
+(`src/server/UnitTest/Cases/ShieldAbilities_Test.luau`) esta corregido, y lo mismo con el
+`reflectBalance` de 8 a 6. Los dos cambios estan explicados en la cabecera del archivo.
+
+Con las dos cosas corregidas: **68 tests en verde** (46 previos + 22 nuevos).
+
 ## 3. Ids de escudo recovered
 
 De los dos archivos rescatados salen mas ids de los que creiamos:
