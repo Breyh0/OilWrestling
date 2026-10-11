@@ -389,6 +389,30 @@ Lo unico que cambia del diseno original es el TEXTO cuando ya tienes el objeto (
 se sustituye por el estado y el boton dice EQUIPAR/PUESTO), porque sin eso no habria forma
 de equipar. La forma, las medidas y el borde blanco son los suyos.
 
+### El icono de la tienda: el escudo del bloqueo en miniatura (2026-10-11)
+
+Los escudos salian como un **emoji plano, el mismo para los ocho**. Eso no era lo que hay:
+el escudo del bloqueo es un **circulo magico** con aro principal, aro fino interior, dos
+juegos de arcos discontinuos y relleno con degradado. Los portales.
+
+El dibujo vive en `OilBlockVFX`, y **se queda ahi**. Se extrajo `buildPieces(parent, color)`
+—que es lo unico que hacia `buildFace`— y ahora lo usan los dos: el escudo del bloqueo
+(dentro de un `SurfaceGui`) y `OilBlockVFX.buildIcon` para la tienda (dentro de un `Frame`).
+**Una sola definicion**: si el escudo cambia, el icono cambia con el.
+
+La miniatura se dibuja a **512x512**, la misma resolucion que el `SurfaceGui`, y se reduce
+con `UIScale` de `size/512`. Los aros, sus grosores y el patron de arcos salen identicos
+**sin reescribir medidas ni acertarlas a ojo**.
+
+Dos diferencias, solo en la miniatura: el relleno pasa de `0.84` a `0.62` de transparencia
+(en pelea hay brillos y chispas detras; solo, sobre el fondo plano de la tarjeta, se veria
+un aro vacio) y el giro de los arcos discontinuos es fijo (22 y -55). En la tienda hay
+veinte tarjetas y no hay a quien mirarlas girar.
+
+**Regla:** el diseno de un icono va en el modulo del objeto que representa, no en el
+cliente que lo muestra. Y si se puede reutilizar el mismo codigo en vez de copiar medidas,
+se reutiliza: dos copias parecidas se desincronizan al primer cambio.
+
 ## TODO / Known issues
 
 ### Rendimiento: MEDIDO el 2026-10-11 (cerrado, con resultados)
