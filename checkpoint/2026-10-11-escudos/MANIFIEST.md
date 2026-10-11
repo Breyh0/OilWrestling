@@ -48,36 +48,88 @@ descarta todo lo que no difiere.
 
 ### Las codificaciones estan mezcladas
 
-| Archivo | Codificacion |
-|---|---|
-| `ShieldAbilities_original` | **Latin-1** (la `i` acentuada es un byte `0xED`) |
-| `ShieldAbilities_Test_original` | **UTF-8** |
-| `OilBlockVFX_original` | **UTF-8** |
-| `OilCombat_original` | **UTF-8** |
+| Archivo | FNV | Bytes | Codificacion |
+|---|---|---|---|
+| `ShieldAbilities_original` | `3684004711` | 9489 | **Latin-1** (la `i` acentuada es un byte `0xED`) |
+| `ShieldAbilities_Test_original` | `2089202569` | 5284 | **UTF-8** |
+| `OilCombat_original` | `1511816891` | 50433 | **UTF-8** |
+| `OilBlockVFX_original` | `3743230225` | 19140 | **UTF-8** |
+| `CosmeticsShared_original` | `825101627` | 3331 | **UTF-8** |
+| `ProgressionLogic_original` | `220074352` | 12990 | ASCII puro |
+| `ProgressionService_original` | `1575331139` | 14421 | ASCII puro |
+| `MainMenuClient_original` | `2341815890` | 16573 | ASCII puro |
+| `ProgressionClient` (UI v1) | `1474751144` | 1111 | UTF-8 con emoji y una tilde |
 
 Asi que **no se puede asumir nada**: hay que mirar cada archivo. Por eso la verificacion
 es por hash y no por "tiene los mismos bytes".
 
-## 1bis. Lo que queda en el lugar y NO se ha rescatado
+## 1bis. La otra mitad de la tienda (rescatada y verificada el mismo dia)
 
-El rescate de escudos esta completo, pero en `ServerStorage` quedan mas respaldos sueltos
-que **tampoco estan en git** y que se perderian con una limpieza:
+| Archivo | FNV | Bytes |
+|---|---|---|
+| `Respaldo_Tienda_Cajas/ProgressionLogic_original.luau` | `220074352` | 12990 |
+| `Respaldo_Tienda_Cajas/ProgressionService_original.luau` | `1575331139` | 14421 |
+| `Respaldo_Tienda_Cajas/MainMenuClient_original.luau` | `2341815890` | 16573 |
+| `Respaldo_UI_Progresion.ProgressionUI_anterior/ProgressionClient.luau` | `1474751144` | 1111 |
 
-| Script | FNV | Bytes | Que es |
-|---|---|---|---|
-| `Respaldo_Tienda_Cajas.ProgressionLogic_original` | `220074352` | 12990 | logica con tiendas/cajas |
-| `Respaldo_Tienda_Cajas.ProgressionService_original` | `1575331139` | 14421 | servicio con tiendas/cajas |
-| `Respaldo_Tienda_Cajas.MainMenuClient_original` | `2341815890` | 16573 | el menu con la tienda |
-| `Respaldo_UI_Progresion.ProgressionUI_anterior.ProgressionClient` | `1474751144` | 1111 | panel de progreso v1 |
+Los tres primeros son **ASCII puro**, sin problema de codificacion. El cuarto lleva emoji
+y una tilde, y se rescato usando los bytes exactos del hex del lugar en vez de copiar el
+texto (los emoji se copian bien al leer, pero no se sabe que bytes son hasta que se mira).
 
-Los tres primeros **son la otra mitad de la tienda**. Si el objetivo es montar el sistema
-completo, estos cuentan tanto como los cinco rescatados.
+### Esto NO es duplicado de lo que ya hay
 
-Y sigue faltando **`StarterPlayerScripts.OilBlockVFXClient`**: el propio `OilBlockVFX`
-dice *"Lo usa StarterPlayerScripts.OilBlockVFXClient"*, y ese script no aparece en ningun
-respaldo. Sin el, los VFX rescatados no se dibujan.
+Comprobado sobre `src/`: **la tienda no existe en el codigo vivo**. Cero apariciones de
+`BuyCosmetic`, `EquipCosmetic`, `GrantCosmetic`, `ReconcileCosmetics` y `CosVictory`.
 
-## 1ter. Lo que NO hay que llevar de `OilCombat_original`
+Lo unico vivo son las dos lineas del `MainMenuClient.client.luau` actual (195 y 230) que
+buscan `PurchaseItem` y `RedeemCode`. **Ninguno de los dos remotos existe**, ni siquiera
+declarado en `src/shared/*.model.json`. O sea: el boton de comprar hoy no hace nada, y el
+de canjear codigos tampoco.
+
+### Lo que aporta la mitad rescatada
+
+- `ProgressionLogic`: `BuyCosmetic`, `EquipCosmetic`, `GrantCosmetic` y
+  `ReconcileCosmetics`. El estado del jugador pasa a ser
+  `cosm = { owned = { [id] = true }, eq = { [ranura] = id } }`, y `Reconcile` limpia lo que
+  ya no exista en el catalogo y regala los gratuitos.
+- `ProgressionService`: `PurchaseCosmetic`, `EquipCosmetic`, `GrantCosmetic`,
+  `GetCosmetics`, mas los atributos **`CosVictory` y `CosRingout`** que el cliente lee. Y el
+  remoto `RequestProgression` con rate-limit de 1 s.
+- `MainMenuClient`: la interfaz de tienda con tarjetas, toast, y el panel de codigos.
+
+### Dos cosas que hay que arreglar antes de portar nada
+
+1. **El cliente decide el precio.** `SHOP_ITEMS` esta declarado **en el cliente**, con id,
+   nombre y precio dentro. El boton manda `remote:FireServer(item.id)` y ya esta. Es
+   exactamente el fallo que `lucha-feature` marca: *"Si el cliente calcula un precio, hay un
+   bug de seguridad esperando"*. El servidor tiene que ser el que mire el precio en el
+   catalogo.
+2. **Los items de `SHOP_ITEMS` no son cosmeticos reales.** Son `oil_gold`, `oil_crimson`,
+   `oil_emerald`, `oil_night`, `muscle` y `crown`, con precios de 250 a 1000. **Ninguno de
+   esos ids existe en `CosmeticsShared`.** Es una tienda de prueba con contenido inventado,
+   no un catalogo real.
+
+Ademas, el codigo espera que `RedeemCode` sea un **`RemoteFunction`** (usa `InvokeServer`),
+mientras que todos los remotos del proyecto son `RemoteEvent`. Habria que elegir: o se
+declara ese RemoteFunction, o se rehace el canje con evento + respuesta.
+
+### Y el dato que falta para los escudos
+
+`ProgressionService_original` publica `CosVictory` y `CosRingout`, **pero no `CosShield`**.
+`ShieldAbilities.ForPlayer` lee el atributo `CosShield` del jugador, asi que anadirlo es
+trabajo nuevo, no un rescate. El sitio natural es junto a `applyCosmeticAttributes`.
+
+## 1ter. Lo que queda en el lugar y NO se ha rescatado
+
+Solo queda un elemento suelto, y **no es un script**:
+
+**`StarterPlayerScripts.OilBlockVFXClient`**. El propio `OilBlockVFX` dice *"Lo usa
+StarterPlayerScripts.OilBlockVFXClient"*, y ese cliente **no aparece en ningun respaldo**.
+Sin el, los VFX del bloqueo rescatados no se dibujan: el modulo esta ahi, pero nadie lo
+llama. Si se limpia `ServerStorage` y el cliente no existia mas que ahi, esa pieza esta
+perdida y habria que escribirla de cero (llamar a `attach` / `onFx` / `step`).
+
+## 1quater. Lo que NO hay que llevar de `OilCombat_original`
 
 Este backup tiene bloques marcados `[INYECCIÓN]` que **no son codigo del diseño**, son
 parches a lo bruto. En concreto:

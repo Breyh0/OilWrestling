@@ -16,6 +16,11 @@ ESPERADO = {
     "ServerStorage.Respaldo_Habilidades_Escudos/ShieldAbilities_Test_original.luau": (2089202569, 5284),
     "ServerStorage.Respaldo_Tienda_Cajas/OilBlockVFX_original.luau": (3743230225, 19140),
     "ServerStorage.Respaldo_Tienda_Cajas/CosmeticsShared_original.luau": (825101627, 3331),
+    # La otra mitad de la tienda, rescatada el mismo 2026-10-11
+    "ServerStorage.Respaldo_Tienda_Cajas/ProgressionLogic_original.luau": (220074352, 12990),
+    "ServerStorage.Respaldo_Tienda_Cajas/ProgressionService_original.luau": (1575331139, 14421),
+    "ServerStorage.Respaldo_Tienda_Cajas/MainMenuClient_original.luau": (2341815890, 16573),
+    "ServerStorage.Respaldo_UI_Progresion.ProgressionUI_anterior/ProgressionClient.luau": (1474751144, 1111),
     "ServerStorage.Respaldo_Habilidades_Escudos/OilCombat_original.luau": (1511816891, 50433),
 }
 

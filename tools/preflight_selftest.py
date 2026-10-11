@@ -28,6 +28,19 @@ ESPERADO = {
 # equipo deja de mirarlo y la puerta se vuelve decorativa.
 LIMPIOS = ["src", "docs", ".opencode"]
 
+# Contenido que el preflight NO debe marcar. Existe porque el 2026-10-11 se abrio la
+# regla `alfabeto` al rango U+2B00-U+2BFF: un panel rescatado traia un emoji de estrella
+# (U+2B50) y la regla lo rebaba como ideograma. Una regla que se ensancha sin control
+# acaba dejando pasar justo lo que existe para cazar, asi que cada ampliacion va con su
+# comprobacion de que lo de antes sigue saltando (arriba) y de que esto ya no salta.
+NO_MARCA = [
+    ("emoji estrella U+2B50", "local x = '\u2b50'"),
+    ("emoji moneda U+1FA99", "local x = '\U0001fa99'"),
+    ("emoji memo U+1F4DD", "local x = '\U0001f4dd'"),
+    ("guion largo U+2500", "local x = '\u2500'"),
+    ("tilde y enye", "local x = 'a\u00f1o \u00bfqu\u00e9 tal?'"),
+]
+
 
 def correr(*args):
     return subprocess.run(
@@ -65,6 +78,19 @@ def main():
         if not bien:
             fallos += 1
             print("        " + salida.strip().replace("\n", "\n        ")[:600])
+
+    print()
+    print("== lo que la puerta DEBE dejar pasar (si no, la puerta es decorativa) ==")
+    import tempfile
+    for nombre, contenido in NO_MARCA:
+        with tempfile.TemporaryDirectory() as d:
+            ruta = Path(d) / "caso.luau"
+            ruta.write_text(contenido, encoding="utf-8")
+            r = correr(str(ruta))
+            limpio = "problemas: 0" in r.stdout
+            print(f"  {'OK   ' if limpio else 'FALLA'} {nombre}")
+            if not limpio:
+                fallos += 1
 
     print()
     print("== el codigo real debe salir limpio ==")
