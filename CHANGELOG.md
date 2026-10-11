@@ -67,3 +67,6 @@ desde el punto de vista de quien juega.
 
 El punto 3 es el que se olvida. La escena y la GUI **no están en git**: sin publicar, el
 cambio solo existe en tu Studio.
+
+- scene: inventario de escena versionado con huella, para vigilar la capa que no esta en git
+
