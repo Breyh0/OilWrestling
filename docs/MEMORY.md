@@ -304,6 +304,51 @@ Rescate y reconstruccion del sistema de escudos que `supergamertth8` dejo dormid
   (uno de cada dos). Se verifica por hash, nunca por tamano.
 - `require` **cachea**: para probar un cambio hay que arrancar un playtest nuevo.
 
+## Tienda: el servidor decide (2026-10-11, `ProgressionService` + `MainMenuClient`)
+
+**Estado: capas 4, 5 y 6. Los escudos YA SE VEN, SE COMPRAN Y SE EQUIPAN.** Falta la
+capa 7 (publicar el place) y el enganche de las habilidades a `OilCombat`.
+
+**Donde estaban los escudos: en ningun sitio.** La tienda que se ve en pantalla tenia
+seis items inventados (`oil_gold`, `oil_crimson`, `oil_muscle`...) con los **precios
+escritos en el cliente**. Los escudos solo existian en el catalogo, que ninguna pantalla
+leia. Eso es justo lo que marca `lucha-feature`: si el cliente decide el precio, el
+precio se puede cambiar.
+
+- **Remotos**: `PurchaseItem` y `EquipItem`, con whitelist de ids y dedupe de 0,4 s. El
+  catalogo se pide por el `RequestProgression` que ya existia, con un segundo argumento
+  (`true` = "tambien quiero el catalogo"), para no meter un remoto mas.
+- **`CosShield` se publica en el JUGADOR y en el PERSONAJE.** El jugador lo lee
+  `ShieldAbilities.ForPlayer`; el personaje lo lee `OilBlockVFXClient` para pintar el
+  color. Si falta en el personaje, el escudo sale sin pintar.
+
+### Cuatro trampas que solo salen abriendo el menu y mirando
+
+1. **Un `RemoteEvent` disparado antes de que el otro extremo este escuchando se PIERDE.**
+   En Studio no hay DataStore, el servidor termina de cargar en milisegundos y puede tener
+   todo listo ANTES de que arranque el script del cliente. El cliente pedia el catalogo
+   una sola vez: la tienda se quedaba en "no hay nada" **para siempre**. Ahora reintenta
+   hasta 4 veces con 1,5 s entre medias, y para en cuanto llega.
+2. **El `UIListLayout` se destruye con el contenido.** El `ScrollingFrame` `Items` se edita
+   a mano en Studio y no traia ninguno: las ocho tarjetas se dibujaban en `(0,0)` unas
+   encima de otras y solo se veia la ultima. Al crear el layout hay que **guardar la
+   referencia y saltarselo en la limpieza**, o la segunda vuelta lo mata.
+3. **`TextLabel` CENTRA el texto por defecto.** Poner `Position` a la izquierda no basta:
+   sin `TextXAlignment = Left` todo sale centrado y la tarjeta parece rota.
+4. **Borrar "los Frames" no es borrar "el contenido".** El aviso de lista vacia es un
+   `TextLabel`: si el filtro es `IsA("Frame")`, se acumulan uno sobre otro en cada
+   repintado. Al revés, si borras todo a pelo, te comes el layout (trampa 2).
+
+### Menos grave
+
+- La barra de pestañas cuelga del PANEL, no de la lista. Colgada de la lista, `pintar()`
+  se la come en el primer repintado.
+- `applyCosmeticAttributes` tiene que llamarse en `loadPlayer` **y** en cada
+  `CharacterAdded`. Llamarla solo al equipar deja al jugador sin escudo al entrar y
+  despues de morir: el personaje nuevo es otra instancia y no hereda atributos.
+- `buildCatalog` es una funcion local, no `Service.GetCatalog`: `loadPlayer` la usa y esta
+  declarado antes que `Service`. La regla `adelantada` del preflight lo para.
+
 ## TODO / Known issues
 
 ### Rendimiento: MEDIDO el 2026-10-11 (cerrado, con resultados)
@@ -336,7 +381,9 @@ la GUI (417 objetos, uno de 257 en `MainMenu`).
 - [x] ~~**Bug alta**: `runMatch` dejaba `match` colgado~~ → **ARREGADO 2026-10-07**: el cuerpo es `runMatchBody` y `OilCombat.runMatch` lo envuelve en `pcall` + `forceCleanup()` (limpia `match`, `OilMatchActive`/`OilSlick` y libera cada luchero). Verificado inyectando un error real: 0 huérfanos y el combate siguiente arranca.
 - [x] ~~#4 `releaseFighter` sin `dropHolds`~~ · ~~#5 callbacks pospuestos leían el `match` global~~ · ~~#6 carrera del token `session`~~ · ~~#7 bucle de IA~~ → **TODOS ARREGLADOS 2026-10-07**: cada entrada de luchador guarda `e.match = m` y el helper `sameMatch(e, m)` (OilCombat L708) exige combate no nulo, `match == m`, `e.match == m` y `not e.released`. Lo usan el windup de `doPush`, el windup y el lanzamiento de `doGrab`, `tickCharges`, el bucle de IA y `canKeepActing(e, m)`. `releaseFighter` empieza con `dropHolds(e)`. En `MatchLoop`, `clearAIFighters(ai)` destruye solo el modelo de su propia sesión y `runSoloFight` re-chequea `mySession == session` antes de `spawnAI()`. **Regla para lo nuevo: cualquier `task.delay`/`task.spawn` que toque estado de combate debe llevar `sameMatch(e, m)`.**
 - [x] ~~`OilCombat.doCharge`: busy-wait `task.wait(0.03)`~~ → **ARREGADO 2026-10-07**: las embestidas están en `activeCharges` y las mueve `tickCharges()` desde el Heartbeat del módulo (1 chequeo por frame, sin despertares extra). Se conserva el retardo de 30ms del primer impacto: el balance no cambia.
-- [ ] Lógica de Tienda y Códigos (UI construida y cableada, `redeem()`/compras = placeholders).
+- [x] ~~Lógica de Tienda y Códigos (UI construida y cableada, `redeem()`/compras = placeholders)~~ → **TIENDA HECHA 2026-10-11**: compras y equipado funcionan de verdad, con el precio decidiéndolo el servidor. Ver sección "Tienda: el servidor decide". **Pendiente**: los **códigos** siguen siendo placeholder (`RedeemCode` ni existe; el cliente lo busca y no lo encuentra).
+- [ ] Enganchar las habilidades al combate: `ShieldAbilities.ForPlayer(jugador)` dentro de `OilCombat`. Rama aparte, cambio mínimo, playtest largo (`OilCombat` son 1465 líneas y no se toca sin eso).
+- [ ] Publicar el place con la tienda nueva.
 - [ ] IA estática (sin comportamiento real).
 - [ ] Mover `ProgressionClient` (StarterGui) a `src/client` con refactor de lookup a `PlayerGui`.
 - [ ] Invitar a supergamertth8 al repo (Settings → Collaborators) y que ejecute SETUP.md.
