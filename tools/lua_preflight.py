@@ -257,8 +257,14 @@ def rev_alfabeto(lineas):
     se note en el diff: compila igual, asi que el preflight es el unico que lo ve.
     Se permiten los simbolos de UI (formas geometricas U+2500-U+27BF, grados, flechas,
     comillas tipograficas, monedas), los selectores de emoji (U+FE0F, U+200D) y los
-    emoji proprios (U+1F000-U+1FAFF): en docs y skills son marcadores intencionados.
-    Lo que se busca es alfabeto NO nuestro: chino, japones, cirilico, arabe.
+    emoji proprios (U+1F000-U+1FAFF y U+2B00-U+2BFF): en docs y skills son marcadores
+    intencionados. Lo que se busca es alfabeto NO nuestro: chino, japones, cirilico, arabe.
+
+    U+2B00-U+2BFF se permitio el 2026-10-11 al rescatar un panel que tenia un emoji de
+    estrella (U+2B50) y el preflight lo marcaba como ideograma. Ese rango es "Miscellaneous
+    Symbols and Arrows": el estrella, el circulo relleno, los simbolos de estrella. Es
+    seguro porque **todos los alfabetos que hay que cazar estan por encima de U+2FFF**:
+    cirilico U+0400, arabe U+0600, y el chino/japones U+3000 en adelante.
     """
     permitidos = set("°·—–…“”„«»¡¿€$£¥•⇒\ufe0f\u200d")
     fallos = []
@@ -266,7 +272,7 @@ def rev_alfabeto(lineas):
         malos = sorted({
             c for c in ln
             if ord(c) > 0x2500 and c not in permitidos
-            and not (0x2500 <= ord(c) <= 0x27BF)
+            and not (0x2500 <= ord(c) <= 0x2BFF)
             and not (0x1F000 <= ord(c) <= 0x1FAFF)
         })
         if malos:
