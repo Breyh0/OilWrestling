@@ -304,6 +304,115 @@ Rescate y reconstruccion del sistema de escudos que `supergamertth8` dejo dormid
   (uno de cada dos). Se verifica por hash, nunca por tamano.
 - `require` **cachea**: para probar un cambio hay que arrancar un playtest nuevo.
 
+## Tienda: el servidor decide (2026-10-11, `ProgressionService` + `MainMenuClient`)
+
+**Estado: capas 4, 5 y 6. Los escudos YA SE VEN, SE COMPRAN Y SE EQUIPAN.** Falta la
+capa 7 (publicar el place) y el enganche de las habilidades a `OilCombat`.
+
+**Donde estaban los escudos: en ningun sitio.** La tienda que se ve en pantalla tenia
+seis items inventados (`oil_gold`, `oil_crimson`, `oil_muscle`...) con los **precios
+escritos en el cliente**. Los escudos solo existian en el catalogo, que ninguna pantalla
+leia. Eso es justo lo que marca `lucha-feature`: si el cliente decide el precio, el
+precio se puede cambiar.
+
+- **Remotos**: `PurchaseItem` y `EquipItem`, con whitelist de ids y dedupe de 0,4 s. El
+  catalogo se pide por el `RequestProgression` que ya existia, con un segundo argumento
+  (`true` = "tambien quiero el catalogo"), para no meter un remoto mas.
+- **`CosShield` se publica en el JUGADOR y en el PERSONAJE.** El jugador lo lee
+  `ShieldAbilities.ForPlayer`; el personaje lo lee `OilBlockVFXClient` para pintar el
+  color. Si falta en el personaje, el escudo sale sin pintar.
+
+### Cuatro trampas que solo salen abriendo el menu y mirando
+
+1. **Un `RemoteEvent` disparado antes de que el otro extremo este escuchando se PIERDE.**
+   En Studio no hay DataStore, el servidor termina de cargar en milisegundos y puede tener
+   todo listo ANTES de que arranque el script del cliente. El cliente pedia el catalogo
+   una sola vez: la tienda se quedaba en "no hay nada" **para siempre**. Ahora reintenta
+   hasta 4 veces con 1,5 s entre medias, y para en cuanto llega.
+2. **El `UIListLayout` se destruye con el contenido.** El `ScrollingFrame` `Items` se edita
+   a mano en Studio y no traia ninguno: las ocho tarjetas se dibujaban en `(0,0)` unas
+   encima de otras y solo se veia la ultima. Al crear el layout hay que **guardar la
+   referencia y saltarselo en la limpieza**, o la segunda vuelta lo mata.
+3. **`TextLabel` CENTRA el texto por defecto.** Poner `Position` a la izquierda no basta:
+   sin `TextXAlignment = Left` todo sale centrado y la tarjeta parece rota.
+4. **Borrar "los Frames" no es borrar "el contenido".** El aviso de lista vacia es un
+   `TextLabel`: si el filtro es `IsA("Frame")`, se acumulan uno sobre otro en cada
+   repintado. Al revés, si borras todo a pelo, te comes el layout (trampa 2).
+
+### Menos grave
+
+- La barra de pestañas cuelga del PANEL, no de la lista. Colgada de la lista, `pintar()`
+  se la come en el primer repintado. **Al final se quitaron** (ver "Leccion de diseno").
+- `applyCosmeticAttributes` tiene que llamarse en `loadPlayer` **y** en cada
+  `CharacterAdded`. Llamarla solo al equipar deja al jugador sin escudo al entrar y
+  despues de morir: el personaje nuevo es otra instancia y no hereda atributos.
+- `buildCatalog` es una funcion local, no `Service.GetCatalog`: `loadPlayer` la usa y esta
+  declarado antes que `Service`. La regla `adelantada` del preflight lo para.
+
+### Leccion de diseno (2026-10-11): el diseno esta EN EL LUGAR, no en el codigo
+
+**Me invente un diseno de tarjetas entero y rompi el que habia.** Dos veces: primero una
+lista vertical, luego una "restauracion" que seguia sin ser el original. Lo que decia este
+apartado antes ("el original es una lista plana") **era tambien falso**: la fuente de
+verdad del diseno **no es el script, es el GUI montado en Studio**.
+
+**Antes de dibujar nada, mirar que hay DENTRO del contenedor, en el lugar:**
+
+```
+StarterGui.MainMenu.Background.ShopPanel.Items
+  Layout     <UIGridLayout>  CellSize 184x172, CellPadding 12,
+                            FillDirection Horizontal, HAlign Center, SortOrder LayoutOrder
+  UIPadding                  T6 B6 L4 R4
+```
+
+Eso es una **cuadrícula de 3 columnas de 184x172**, y es el diseno de `supergamertth8`.
+En 604 px caben exactamente 3 (3x184 + 2x12 = 576), y 172 es justo icono + nombre +
+precio + boton. **No cabe una linea mas.** El `card.Size` del codigo era una linea muerta:
+el `UIGridLayout` con `CellSize` explicito sobrescribe el tamano de cada tarjeta.
+
+**Los dos fallos de verdad:**
+
+1. **Busque `UIListLayout`, no lo encontre y conclude que no habia layout.** Era un
+   `UIGridLayout`: otra clase distinta. "No he encontrado lo que buscaba" no es "no
+   existe". La comprobacion era `FindFirstChildOfClass("UIListLayout")`: un solo nombre
+   adivinado. Habia que **listar los hijos y mirarlos**.
+2. **Mi limpieza se comia la estructura.** Borrava todo lo que colgaba de `Items`, y eso
+   incluia el `UIGridLayout` y el `UIPadding` originales: en la segunda vuelta las veinte
+   tarjetas se amontonaban en (0,0). Ahora borra **solo `GuiObject`** (las tarjetas y el
+   aviso de lista vacia). Los layouts y el padding son estructura y no se tocan.
+
+**Regla que sale de aqui:** si vas a pintar dentro de un contenedor que ya existe,
+**primero se listan sus hijos y se leen sus medidas**. El script genera el CONTENIDO; el
+GUI manda sobre la FORMA.
+
+Lo unico que cambia del diseno original es el TEXTO cuando ya tienes el objeto (el precio
+se sustituye por el estado y el boton dice EQUIPAR/PUESTO), porque sin eso no habria forma
+de equipar. La forma, las medidas y el borde blanco son los suyos.
+
+### El icono de la tienda: el escudo del bloqueo en miniatura (2026-10-11)
+
+Los escudos salian como un **emoji plano, el mismo para los ocho**. Eso no era lo que hay:
+el escudo del bloqueo es un **circulo magico** con aro principal, aro fino interior, dos
+juegos de arcos discontinuos y relleno con degradado. Los portales.
+
+El dibujo vive en `OilBlockVFX`, y **se queda ahi**. Se extrajo `buildPieces(parent, color)`
+—que es lo unico que hacia `buildFace`— y ahora lo usan los dos: el escudo del bloqueo
+(dentro de un `SurfaceGui`) y `OilBlockVFX.buildIcon` para la tienda (dentro de un `Frame`).
+**Una sola definicion**: si el escudo cambia, el icono cambia con el.
+
+La miniatura se dibuja a **512x512**, la misma resolucion que el `SurfaceGui`, y se reduce
+con `UIScale` de `size/512`. Los aros, sus grosores y el patron de arcos salen identicos
+**sin reescribir medidas ni acertarlas a ojo**.
+
+Dos diferencias, solo en la miniatura: el relleno pasa de `0.84` a `0.62` de transparencia
+(en pelea hay brillos y chispas detras; solo, sobre el fondo plano de la tarjeta, se veria
+un aro vacio) y el giro de los arcos discontinuos es fijo (22 y -55). En la tienda hay
+veinte tarjetas y no hay a quien mirarlas girar.
+
+**Regla:** el diseno de un icono va en el modulo del objeto que representa, no en el
+cliente que lo muestra. Y si se puede reutilizar el mismo codigo en vez de copiar medidas,
+se reutiliza: dos copias parecidas se desincronizan al primer cambio.
+
 ## TODO / Known issues
 
 ### Rendimiento: MEDIDO el 2026-10-11 (cerrado, con resultados)
@@ -336,7 +445,9 @@ la GUI (417 objetos, uno de 257 en `MainMenu`).
 - [x] ~~**Bug alta**: `runMatch` dejaba `match` colgado~~ → **ARREGADO 2026-10-07**: el cuerpo es `runMatchBody` y `OilCombat.runMatch` lo envuelve en `pcall` + `forceCleanup()` (limpia `match`, `OilMatchActive`/`OilSlick` y libera cada luchero). Verificado inyectando un error real: 0 huérfanos y el combate siguiente arranca.
 - [x] ~~#4 `releaseFighter` sin `dropHolds`~~ · ~~#5 callbacks pospuestos leían el `match` global~~ · ~~#6 carrera del token `session`~~ · ~~#7 bucle de IA~~ → **TODOS ARREGLADOS 2026-10-07**: cada entrada de luchador guarda `e.match = m` y el helper `sameMatch(e, m)` (OilCombat L708) exige combate no nulo, `match == m`, `e.match == m` y `not e.released`. Lo usan el windup de `doPush`, el windup y el lanzamiento de `doGrab`, `tickCharges`, el bucle de IA y `canKeepActing(e, m)`. `releaseFighter` empieza con `dropHolds(e)`. En `MatchLoop`, `clearAIFighters(ai)` destruye solo el modelo de su propia sesión y `runSoloFight` re-chequea `mySession == session` antes de `spawnAI()`. **Regla para lo nuevo: cualquier `task.delay`/`task.spawn` que toque estado de combate debe llevar `sameMatch(e, m)`.**
 - [x] ~~`OilCombat.doCharge`: busy-wait `task.wait(0.03)`~~ → **ARREGADO 2026-10-07**: las embestidas están en `activeCharges` y las mueve `tickCharges()` desde el Heartbeat del módulo (1 chequeo por frame, sin despertares extra). Se conserva el retardo de 30ms del primer impacto: el balance no cambia.
-- [ ] Lógica de Tienda y Códigos (UI construida y cableada, `redeem()`/compras = placeholders).
+- [x] ~~Lógica de Tienda y Códigos (UI construida y cableada, `redeem()`/compras = placeholders)~~ → **TIENDA HECHA 2026-10-11**: compras y equipado funcionan de verdad, con el precio decidiéndolo el servidor. Ver sección "Tienda: el servidor decide". **Pendiente**: los **códigos** siguen siendo placeholder (`RedeemCode` ni existe; el cliente lo busca y no lo encuentra).
+- [ ] Enganchar las habilidades al combate: `ShieldAbilities.ForPlayer(jugador)` dentro de `OilCombat`. Rama aparte, cambio mínimo, playtest largo (`OilCombat` son 1465 líneas y no se toca sin eso).
+- [ ] Publicar el place con la tienda nueva.
 - [ ] IA estática (sin comportamiento real).
 - [ ] Mover `ProgressionClient` (StarterGui) a `src/client` con refactor de lookup a `PlayerGui`.
 - [ ] Invitar a supergamertth8 al repo (Settings → Collaborators) y que ejecute SETUP.md.

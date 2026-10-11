@@ -46,17 +46,6 @@ local INFO = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local mainButtons = { playBtn, shopBtn, codesBtn }
 local panels = { panel, modePanel, shopPanel, codesPanel }
 
--- ============================================================
--- CONFIGURACION DE LA TIENDA (edita esta tabla para cambiar los items)
--- ============================================================
-local SHOP_ITEMS = {
-	{ id = "oil_gold",    name = "Aceite Dorado",       price = 250,  icon = "\u{2728}",  color = Color3.fromRGB(220, 170, 50) },
-	{ id = "oil_crimson", name = "Aceite Carmes\u{00ED}", price = 250,  icon = "\u{1F525}", color = Color3.fromRGB(200, 70, 60) },
-	{ id = "oil_emerald", name = "Aceite Esmeralda",    price = 400,  icon = "\u{1F340}", color = Color3.fromRGB(70, 150, 70) },
-	{ id = "oil_night",   name = "Aceite Medianoche",   price = 400,  icon = "\u{1F319}", color = Color3.fromRGB(90, 90, 180) },
-	{ id = "muscle",      name = "Pack M\u{00FA}sculo",  price = 600,  icon = "\u{1F4AA}", color = Color3.fromRGB(200, 120, 50) },
-	{ id = "crown",       name = "Corona de Campe\u{00F3}n", price = 1000, icon = "\u{1F451}", color = Color3.fromRGB(150, 110, 200) },
-}
 
 -- ============================================================
 -- Botones: hover / click con UIScale (no mueve el layout)
@@ -97,20 +86,56 @@ local function bindButton(btn)
 end
 
 -- ============================================================
--- Tienda: tarjetas generadas desde SHOP_ITEMS
+-- Tienda: las tarjetas las PINTA lo que el servidor manda
+--
+-- Antes esta tabla vivia aqui, en el cliente, con los precios dentro. Eso era justo el
+-- fallo que marca lucha-feature: si el cliente decide el precio, el precio se puede
+-- cambiar. Ahora el catalogo viene de ProgressionService.GetCatalog(), que lo arma desde
+-- CosmeticsShared, y el boton solo manda un id.
+--
+-- El DIBUJO es el original de MainMenuClient_original.luau (icono centrado, nombre,
+-- precio, boton con borde blanco). Lo unico que se le anade es la linea de la habilidad:
+-- sin ella no se sabe que hace un escudo raro antes de comprarlo.
 -- ============================================================
+local purchaseEvent = ReplicatedStorage:WaitForChild("PurchaseItem")
+local equipEvent = ReplicatedStorage:WaitForChild("EquipItem")
+local requestEvent = ReplicatedStorage:WaitForChild("RequestProgression")
+local notifyEvent = ReplicatedStorage:WaitForChild("MissionNotify")
+local updateEvent = ReplicatedStorage:WaitForChild("UpdateProgression")
+
+-- El escudo de la tarjeta lo dibuja el modulo del propio escudo del bloqueo. Es la misma
+-- pieza que ves delante del luchador cuando bloqueas, en pequeno.
+local OilBlockVFX = require(ReplicatedStorage:WaitForChild("OilBlockVFX"))
+
+local RARITY_COLOR = {
+	comun = Color3.fromRGB(190, 190, 180),
+	poco_comun = Color3.fromRGB(120, 200, 120),
+	raro = Color3.fromRGB(90, 160, 255),
+	epico = Color3.fromRGB(190, 110, 255),
+	legendario = Color3.fromRGB(255, 190, 60),
+}
+
+-- Orden de las ranuras en la lista. Es una lista plana, como el original, pero agrupada:
+-- primero los escudos, que es lo que se vino a buscar.
+local ORDEN_RANURA = { shield = 1, victory = 2, ringout = 3 }
+
+local catalogo = {}   -- lo que manda el servidor
+local miCartera = {}  -- owned
+local miEquipado = {} -- eq
+
 local toast = Instance.new("TextLabel")
 toast.Name = "Toast"
 toast.AnchorPoint = Vector2.new(0.5, 1)
 toast.Position = UDim2.new(0.5, 0, 1, -16)
-toast.Size = UDim2.fromOffset(280, 34)
+toast.Size = UDim2.fromOffset(300, 34)
 toast.BackgroundColor3 = Color3.new(0, 0, 0)
 toast.BackgroundTransparency = 1
 toast.TextTransparency = 1
 toast.Font = Enum.Font.GothamBold
 toast.TextSize = 14
 toast.Text = ""
-toast.ZIndex = 20
+toast.ZIndex = 30
+toast.TextWrapped = true
 toast.Parent = shopPanel
 do
 	local c = Instance.new("UICorner")
@@ -126,7 +151,7 @@ local function showToast(text, color)
 	toast.TextColor3 = color
 	toast.BackgroundTransparency = 0.25
 	toast.TextTransparency = 0
-	task.delay(2, function()
+	task.delay(2.4, function()
 		if toastToken ~= my then return end
 		TweenService:Create(toast, TweenInfo.new(0.4), { BackgroundTransparency = 1, TextTransparency = 1 }):Play()
 	end)
@@ -141,66 +166,211 @@ local function newLabel(parent, props)
 	return l
 end
 
-for i, item in ipairs(SHOP_ITEMS) do
-	local card = Instance.new("Frame")
-	card.Name = item.id
-	card.LayoutOrder = i
-	card.BackgroundColor3 = Color3.fromRGB(38, 46, 32)
-	card.BorderSizePixel = 0
-	card.ZIndex = 11
-	card.Parent = shopItems
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 14)
-	corner.Parent = card
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = item.color
-	stroke.Thickness = 1.5
-	stroke.Transparency = 0.6
-	stroke.Parent = card
-
-	newLabel(card, { Name = "Icon", Position = UDim2.new(0, 0, 0, 12), Size = UDim2.new(1, 0, 0, 56),
-		Font = Enum.Font.GothamBold, TextSize = 44, TextColor3 = Color3.new(1, 1, 1), Text = item.icon })
-	newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 22),
-		Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1), Text = item.name, TextTruncate = Enum.TextTruncate.AtEnd })
-	newLabel(card, { Name = "Price", Position = UDim2.new(0, 0, 0, 98), Size = UDim2.new(1, 0, 0, 20),
-		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = GOLD, Text = "\u{1F4B0} " .. item.price })
-
-	local buy = Instance.new("TextButton")
-	buy.Name = "BuyBtn"
-	buy.AnchorPoint = Vector2.new(0.5, 1)
-	buy.Position = UDim2.new(0.5, 0, 1, -12)
-	buy.Size = UDim2.new(1, -24, 0, 34)
-	buy.BackgroundColor3 = item.color
-	buy.BorderSizePixel = 0
-	buy.ZIndex = 12
-	buy.Font = Enum.Font.GothamBold
-	buy.TextSize = 14
-	buy.TextColor3 = Color3.new(1, 1, 1)
-	buy.Text = "COMPRAR"
-	buy.Parent = card
-	local bc = Instance.new("UICorner")
-	bc.CornerRadius = UDim.new(0, 10)
-	bc.Parent = buy
-	local bs = Instance.new("UIStroke")
-	bs.Name = "Stroke"
-	bs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	bs.Color = Color3.new(1, 1, 1)
-	bs.Thickness = 1.5
-	bs.Transparency = 0.7
-	bs.Parent = buy
-
-	bindButton(buy)
-	buy.MouseButton1Click:Connect(function()
-		local remote = ReplicatedStorage:FindFirstChild("PurchaseItem")
-		if remote and remote:IsA("RemoteEvent") then
-			remote:FireServer(item.id)
-			showToast("Solicitud enviada: " .. item.name, OK_COLOR)
-		else
-			showToast("Pr\u{00F3}ximamente", GOLD)
-		end
-	end)
+local function newButton(parent, props)
+	local b = Instance.new("TextButton")
+	b.BorderSizePixel = 0
+	b.ZIndex = 12
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 13
+	b.TextColor3 = Color3.new(1, 1, 1)
+	for k, v in pairs(props) do b[k] = v end
+	b.Parent = parent
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 10)
+	c.Parent = b
+	-- El borde blanco del boton es del diseno original. Se llama "Stroke" a proposito:
+	-- bindButton lo busca por ese nombre para saber cuanto oscurecerlo al pasar el raton.
+	local s = Instance.new("UIStroke")
+	s.Name = "Stroke"
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Color = Color3.new(1, 1, 1)
+	s.Thickness = 1.5
+	s.Transparency = 0.7
+	s.Parent = b
+	return b
 end
+
+-- El diseño de la lista NO se toca: ShopPanel/Items ya trae montados en Studio un
+-- UIGridLayout ("Layout", celdas de 184x172, 3 columnas, CellPadding 12, centrada) y un
+-- UIPadding. Ese grid es el diseño original y pone el tamaño de cada tarjeta.
+--
+-- Por eso la limpieza de pintar() solo borra GuiObject: si se borrara todo lo que cuelgue,
+-- se llevarian por delante el UIGridLayout y el UIPadding, que son estructura, y la
+-- segunda vuelta amontonaria todas las tarjetas en (0,0).
+--
+-- Ni se crea un layout propio ni se tocan AutomaticCanvasSize ni las medidas: eso ya
+-- estaba bien puesto a mano y cualquier cambio aqui es pisar el diseño.
+
+-- Una sola lista, como el original, pero ordenada: escudos primero, dentro de cada
+-- ranura lo que ya tienes delante y luego por precio. Sin esto habria que bajar mucho
+-- para encontrar un escudo concreto.
+local function listaOrdenada()
+	local lista = {}
+	for _, it in ipairs(catalogo) do
+		lista[#lista+1] = it
+	end
+	table.sort(lista, function(a, b)
+		local sa = ORDEN_RANURA[a.slot] or 9
+		local sb = ORDEN_RANURA[b.slot] or 9
+		if sa ~= sb then return sa < sb end
+		local fa, fb = miCartera[a.id] and 0 or 1, miCartera[b.id] and 0 or 1
+		if fa ~= fb then return fa < fb end
+		if a.price ~= b.price then return a.price < b.price end
+		return a.id < b.id
+	end)
+	return lista
+end
+
+local function pintar()
+	-- Solo se borra lo que hemos pintado nosotros: las tarjetas (Frame) y el aviso de
+	-- lista vacia (TextLabel). Los dos son GuiObject.
+	--
+	-- El filtro importa: si se hiciera "borrar todo lo que cuelgue de Items", se irian
+	-- tambien el UIGridLayout y el UIPadding que traia el diseño original, y a la
+	-- segunda vuelta las 20 tarjetas se dibujarian unas encima de otras.
+	for _, h in ipairs(shopItems:GetChildren()) do
+		if h:IsA("GuiObject") then
+			h:Destroy()
+		end
+	end
+
+	local lista = listaOrdenada()
+	if #lista == 0 then
+		newLabel(shopItems, {
+			Name = "Vacio", Size = UDim2.new(1, -16, 0, 30),
+			Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Color3.fromRGB(160, 170, 150),
+			Text = "Todavia no hay nada en la tienda.", TextWrapped = true,
+		})
+		return
+	end
+
+	for i, item in ipairs(lista) do
+		local tinte = RARITY_COLOR[item.rarity] or RARITY_COLOR.comun
+		local mio = miCartera[item.id] == true
+		local puesto = miEquipado[item.slot] == item.id
+
+		-- El color del escudo manda sobre el de la rareza: es lo que hace el borde, igual
+		-- que en el original, donde el borde llevaba el color del item.
+		local colorItem = item.color or tinte
+
+		-- === DIBUJO: MainMenuClient_original.luau, sin tocar una medida ===
+		-- El Size no es el del grid: el UIGridLayout de Items manda (184x172) y lo
+		-- sobrescribe. Se deja la linea del original por si alguien lee el codigo.
+		local card = Instance.new("Frame")
+		card.Name = item.id
+		card.LayoutOrder = i
+		card.BackgroundColor3 = Color3.fromRGB(38, 46, 32)
+		card.BorderSizePixel = 0
+		card.ZIndex = 11
+		card.Size = UDim2.new(1, -8, 0, 160)
+		card.Parent = shopItems
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 14)
+		corner.Parent = card
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = colorItem
+		-- El grosor se sube solo cuando lo llevas puesto: es el unico sitio donde cabe
+		-- un estado visual sin meter nada mas en la tarjeta.
+		stroke.Thickness = puesto and 3 or 1.5
+		stroke.Transparency = puesto and 0.2 or 0.6
+		stroke.Parent = card
+
+		-- Icono: el MISMO escudo del bloqueo, en miniatura y con el color de este escudo.
+		-- Lo construye OilBlockVFX, que es donde vive el diseno, para que no haya dos
+		-- definiciones del mismo escudo que se separen con el tiempo. Por eso los escudos
+		-- ya no son un emoji plano igual para todos: cada uno es el suyo.
+		-- Los gestos y los efectos de ring-out no son escudos, asi que usan el mismo
+		-- dibujo teñido con su rareza, para que la lista no quede media vacia.
+		OilBlockVFX.buildIcon(card, colorItem, 56)
+
+		newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 22),
+			Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1),
+			Text = item.name, TextTruncate = Enum.TextTruncate.AtEnd })
+
+		-- Precio en dorado, como en el original.
+		-- Lo unico que cambia de sitio es el TEXTO cuando ya lo tienes: en vez del precio
+		-- sale el estado. Sin esto no habria forma de saber que puedes equipar.
+		newLabel(card, { Name = "Price", Position = UDim2.new(0, 0, 0, 98), Size = UDim2.new(1, 0, 0, 20),
+			Font = Enum.Font.GothamBold, TextSize = 14,
+			TextColor3 = mio and OK_COLOR or GOLD,
+			Text = puesto and "EN USO" or (mio and "EN CARTERA" or ("\u{1F4B0} " .. item.price)) })
+
+		-- Boton: el original lo ponia del color del item. El texto y el fondo cambian segun
+		-- el estado porque el original no tenia estados (no habia cartera ni equipado), pero
+		-- la forma, la medida y el borde blanco son los suyos.
+		local boton
+		if puesto then
+			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.new(1, -24, 0, 34),
+				TextSize = 14, BackgroundColor3 = Color3.fromRGB(60, 70, 55),
+				Text = "PUESTO", AutoButtonColor = false })
+		elseif mio then
+			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.new(1, -24, 0, 34),
+				TextSize = 14, BackgroundColor3 = colorItem, Text = "EQUIPAR" })
+		else
+			boton = newButton(card, { Name = "BuyBtn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -12), Size = UDim2.new(1, -24, 0, 34),
+				TextSize = 14, BackgroundColor3 = colorItem, Text = "COMPRAR" })
+		end
+
+		bindButton(boton)
+		boton.MouseButton1Click:Connect(function()
+			if puesto then return end
+			-- Solo se manda el id. No se pinta ningun "Enviado": el unico aviso que sale
+			-- es el del servidor, que es quien decide si la compra va o no.
+			if mio then
+				equipEvent:FireServer(item.id)
+			else
+				purchaseEvent:FireServer(item.id)
+			end
+		end)
+	end
+
+	-- Volver arriba al repintar: si no, cambiar de pestaña te deja a media lista y parece
+	-- que falten items.
+	shopItems.CanvasPosition = Vector2.new(0, 0)
+end
+
+-- Escuchar al servidor: el catalogo, la cartera y el resultado de comprar/equipar
+notifyEvent.OnClientEvent:Connect(function(kind, data)
+	if kind == "catalog" and type(data) == "table" and data.items then
+		catalogo = data.items
+		pintar()
+	elseif kind == "shop" and type(data) == "table" then
+		showToast(data.text or "", data.ok and OK_COLOR or ERR_COLOR)
+	end
+end)
+
+updateEvent.OnClientEvent:Connect(function(d)
+	if type(d) == "table" and type(d.cosm) == "table" then
+		miCartera = d.cosm.owned or {}
+		miEquipado = d.cosm.eq or {}
+		pintar()
+	end
+end)
+
+-- Pide estado y catalogo, con reintentos.
+--
+-- Por que reintentar: un RemoteEvent disparado antes de que el otro extremo este escuchando
+-- se PIERDE, no se guarda. En Studio no hay DataStore, asi que el servidor termina de
+-- cargar el progreso en milisegundos y puede tener todo listo antes de que este script
+-- arranque. Con un solo disparo, la tienda se queda en "no hay nada" para siempre.
+-- Los reintentos paran en cuanto llega el catalogo, y el servidor limita a 1 s por peticion.
+local intentos = 0
+local function pedirCatalogo()
+	if catalogo and #catalogo > 0 then
+		return -- ya llego: no se sigue preguntando
+	end
+	intentos += 1
+	requestEvent:FireServer(true)
+	if intentos < 4 then
+		task.delay(1.5, pedirCatalogo)
+	end
+end
+pedirCatalogo()
+
 
 -- ============================================================
 -- Codigos

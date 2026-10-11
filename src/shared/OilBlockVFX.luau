@@ -121,6 +121,39 @@ local function dashedSequence(n, fill)
 	return NumberSequence.new(keys)
 end
 
+local function buildPieces(parent, color)
+	-- Las piezas del escudo, y SOLO las piezas. Se construyen igual para el escudo del
+	-- bloqueo (dentro de un SurfaceGui en 3D) y para la miniatura de la tienda (dentro de
+	-- un Frame): una sola definicion del dibujo, para que si el escudo cambia, el icono
+	-- de la tienda cambie con el y no se separen.
+	local r = {}
+
+	-- relleno suave del círculo
+	r.fill = make("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(CIRCLE, CIRCLE),
+		BackgroundColor3 = color,
+		BackgroundTransparency = 0.84,
+		BorderSizePixel = 0,
+	}, parent)
+	make("UICorner", { CornerRadius = UDim.new(0.5, 0) }, r.fill)
+	make("UIGradient", {
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.5) }),
+		Rotation = 90,
+	}, r.fill)
+
+	_, r.ring = ringFrame(parent, CIRCLE, 10, color, 0.05)        -- aro principal
+	_, r.inner = ringFrame(parent, CIRCLE * 0.84, 3, WHITE, 0.55) -- aro fino interior
+	_, r.spinA = ringFrame(parent, CIRCLE * 1.12, 7, color, 0.1)  -- arcos que giran
+	r.gradA = make("UIGradient", { Transparency = dashedSequence(4, 0.6) }, r.spinA)
+	_, r.spinB = ringFrame(parent, CIRCLE * 1.26, 4, color, 0.25) -- arcos que giran al revés
+	r.gradB = make("UIGradient", { Transparency = dashedSequence(3, 0.45) }, r.spinB)
+	r.closingFrame, r.closing = ringFrame(parent, 0.94, 6, READY, 1) -- anillo que se cierra
+	r.rippleFrame, r.ripple = ringFrame(parent, CIRCLE, 8, WHITE, 1)  -- onda al recibir un golpe
+	return r
+end
+
 local function buildFace(part, face)
 	local sg = make("SurfaceGui", {
 		Name = "Face" .. face.Name,
@@ -133,32 +166,55 @@ local function buildFace(part, face)
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}, part)
 
-	local r = { sg = sg }
+	local r = buildPieces(sg, STEADY)
+	r.sg = sg
+	return r
+end
 
-	-- relleno suave del círculo
-	r.fill = make("Frame", {
+-- Miniatura del escudo para la tienda: el MISMO escudo del bloqueo, quieto y en pequeño,
+-- con el color del escudo que representa.
+--
+-- Se dibuja a 512x512, la misma resolucion que el SurfaceGui del bloqueo, y se reduce con
+-- un UIScale. Asi los aros, sus grosores y los arcos discontinuos salen identicos: no hay
+-- que reescribir medidas a mano ni acertarlas a ojo, que es como se desencontrarian.
+--
+-- Va quieto a proposito: en la tienda hay veinte tarjetas y ni el raton esta ahi. La
+-- respiracion y el giro son de combate, y alli si hay a quien mirarlos.
+function M.buildIcon(parent, color, size)
+	if typeof(color) ~= "Color3" then
+		color = STEADY
+	end
+	size = size or 56
+
+	local holder = make("Frame", {
+		Name = "Escudo",
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.fromOffset(size, size),
+	}, parent)
+
+	local lienzo = make("Frame", {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(CIRCLE, CIRCLE),
-		BackgroundColor3 = STEADY,
-		BackgroundTransparency = 0.84,
-		BorderSizePixel = 0,
-	}, sg)
-	make("UICorner", { CornerRadius = UDim.new(0.5, 0) }, r.fill)
-	make("UIGradient", {
-		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 0.5) }),
-		Rotation = 90,
-	}, r.fill)
+		Size = UDim2.fromOffset(CANVAS, CANVAS),
+	}, holder)
+	make("UIScale", { Scale = size / CANVAS }, lienzo)
 
-	_, r.ring = ringFrame(sg, CIRCLE, 10, STEADY, 0.05)      -- aro principal
-	_, r.inner = ringFrame(sg, CIRCLE * 0.84, 3, WHITE, 0.55)   -- aro fino interior
-	_, r.spinA = ringFrame(sg, CIRCLE * 1.12, 7, STEADY, 0.1)  -- arcos que giran
-	r.gradA = make("UIGradient", { Transparency = dashedSequence(4, 0.6) }, r.spinA)
-	_, r.spinB = ringFrame(sg, CIRCLE * 1.26, 4, STEADY, 0.25) -- arcos que giran al revés
-	r.gradB = make("UIGradient", { Transparency = dashedSequence(3, 0.45) }, r.spinB)
-	r.closingFrame, r.closing = ringFrame(sg, 0.94, 6, READY, 1) -- anillo que se cierra (ventana de parry)
-	r.rippleFrame, r.ripple = ringFrame(sg, CIRCLE, 8, WHITE, 1) -- onda al recibir un golpe
-	return r
+	local r = buildPieces(lienzo, color)
+	-- El relleno del bloqueo esta casi transparente (0.84) porque va sobre la pelea, con
+	-- brillos y chispas detras. Solo, sobre el fondo plano de la tarjeta, se veria un
+	-- aro vacio: aqui se sube para que el disco se lea.
+	r.fill.BackgroundTransparency = 0.62
+	-- Giro fijo de los arcos discontinuos: es lo que hace que se lea como un portal y no
+	-- como un aro liso. Dos angulos distintos para que no se solapen.
+	r.gradA.Rotation = 22
+	r.gradB.Rotation = -55
+
+	return holder
 end
 
 local function buildShield()
