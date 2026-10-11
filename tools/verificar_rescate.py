@@ -16,7 +16,7 @@ ESPERADO = {
     "ServerStorage.Respaldo_Habilidades_Escudos/ShieldAbilities_Test_original.luau": (2089202569, 5284),
     "ServerStorage.Respaldo_Tienda_Cajas/OilBlockVFX_original.luau": (3743230225, 19140),
     "ServerStorage.Respaldo_Tienda_Cajas/CosmeticsShared_original.luau": (825101627, 3331),
-    "ServerStorage.Respaldo_Tienda_Cajas/OilCombat_original.luau": (1511816891, 50433),
+    "ServerStorage.Respaldo_Habilidades_Escudos/OilCombat_original.luau": (1511816891, 50433),
 }
 
 
@@ -31,20 +31,32 @@ def fnv(data: bytes) -> int:
     return h
 
 
+def buscar(raices, relativa):
+    """Un archivo puede estar en cualquiera de los checkpoints. Por eso se buscan en
+    todos en vez de asumir uno solo: CosmeticsShared_original se rescato el 2026-10-10
+    y los escudos el 2026-10-11."""
+    for raiz in raices:
+        ruta = raiz / relativa
+        if ruta.is_file():
+            return ruta
+    return None
+
+
 def main() -> int:
     if len(sys.argv) < 2:
-        print("uso: python tools/verificar_rescate.py <carpeta del checkpoint>")
+        print("uso: python tools/verificar_rescate.py <carpeta del checkpoint> [otra...]")
         return 2
-    raiz = Path(sys.argv[1])
-    if not raiz.is_dir():
-        print(f"no existe la carpeta: {raiz}")
-        return 2
+    raices = [Path(a) for a in sys.argv[1:]]
+    for raiz in raices:
+        if not raiz.is_dir():
+            print(f"no existe la carpeta: {raiz}")
+            return 2
 
     fallos = 0
     ausentes = 0
     for relativa, (hash_esperado, bytes_esperados) in sorted(ESPERADO.items()):
-        ruta = raiz / relativa
-        if not ruta.is_file():
+        ruta = buscar(raices, relativa)
+        if ruta is None:
             ausentes += 1
             print(f"AUSENTE   {relativa}")
             print(f"         todavia sin rescatar (FNV {hash_esperado}, {bytes_esperados} bytes)")
@@ -55,7 +67,8 @@ def main() -> int:
         estado = "OK      " if ok else "NO COINCIDE"
         if not ok:
             fallos += 1
-        print(f"{estado} {relativa}")
+        donde = "" if ruta.parent == raices[0] else "  (en %s)" % ruta.parent.name
+        print(f"{estado} {relativa}{donde}")
         print(f"         FNV esperado {hash_esperado} | real {hash_real}")
         print(f"         bytes esperados {bytes_esperados} | reales {len(datos)}")
 

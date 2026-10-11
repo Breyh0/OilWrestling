@@ -12,42 +12,89 @@ leer `ShieldAbilities`.
 
 ## 1. Que se ha rescatado y verificado
 
-| Archivo | FNV | Bytes | Estado |
-|---|---|---|---|
-| `ServerStorage.Respaldo_Habilidades_Escudos/ShieldAbilities_original.luau` | `3684004711` | 9489 | **RESCATADO y verificado byte a byte** |
-| `ServerStorage.Respaldo_Habilidades_Escudos/ShieldAbilities_Test_original.luau` | `2089202569` | 5284 | **RESCATADO y verificado byte a byte** |
+**Los cinco, byte a byte.** Es todo el material del sistema de escudos y cajas que
+existia en el lugar.
 
-Es lo que faltaba. Todas las copias se comprueban con:
+| Archivo | FNV | Bytes |
+|---|---|---|
+| `Respaldo_Habilidades_Escudos/ShieldAbilities_original.luau` | `3684004711` | 9489 |
+| `Respaldo_Habilidades_Escudos/ShieldAbilities_Test_original.luau` | `2089202569` | 5284 |
+| `Respaldo_Habilidades_Escudos/OilCombat_original.luau` | `1511816891` | 50433 |
+| `Respaldo_Tienda_Cajas/OilBlockVFX_original.luau` | `3743230225` | 19140 |
+| `Respaldo_Tienda_Cajas/CosmeticsShared_original.luau` | `825101627` | 3331 |
+
+Comprobacion (los archivos estan repartidos en dos checkpoints, se pasan las dos rutas):
 
 ```powershell
-python tools\verificar_rescate.py checkpoint\2026-10-11-escudos
+python tools\verificar_rescate.py checkpoint\2026-10-11-escudos checkpoint\2026-10-10-estado-del-lugar
 ```
 
 Un **hash que no coincide significa que la copia no sirve**, aunque compile y aunque se
 lea bien. Por eso la verificacion es automatica y no una mirada.
 
+### Lo que costo que `OilCombat_original` saliera fiel
+
+Faltaban 22 bytes y **no se veian**. Dos motivos, los dos invisibles:
+
+1. **Once lineas solo con tabuladores** (682, 689, 698, 701, 710, 833, 1497, 1568, 1574,
+   1585, 1589). Al leer el archivo parecen vacias; al copiar el texto tambien. Son
+   espacios finales. Sin ell, el hash no cuadra aunque el contenido se vea identico.
+2. **Un espaciado**: `participants[#participants + 1] = e` con espacios alrededor del `+`.
+
+Se localizaron comparando **sumas de bytes por bloques de 50 lineas** (17 numeros en vez
+de 1681), y luego linea a linea dentro de los cinco bloques que fallaban. Es el mismo
+metodo que se uso con `ShieldAbilities`, y funciona porque no devuelve contenido: se
+descarta todo lo que no difiere.
+
 ### Las codificaciones estan mezcladas
 
-| Archivo | Codificacion | Como se nota |
-|---|---|---|
-| `ShieldAbilities_original` | **Latin-1** | la `i` acentuada de "Guia" es un byte `0xED` |
-| `ShieldAbilities_Test_original` | **UTF-8** | la `a` acentuada de "mas" son dos bytes `0xC3 0xA1` |
+| Archivo | Codificacion |
+|---|---|
+| `ShieldAbilities_original` | **Latin-1** (la `i` acentuada es un byte `0xED`) |
+| `ShieldAbilities_Test_original` | **UTF-8** |
+| `OilBlockVFX_original` | **UTF-8** |
+| `OilCombat_original` | **UTF-8** |
 
 Asi que **no se puede asumir nada**: hay que mirar cada archivo. Por eso la verificacion
 es por hash y no por "tiene los mismos bytes".
 
-## 2. Que queda por rescatar
+## 1bis. Lo que queda en el lugar y NO se ha rescatado
 
-Mismo origen, mismo riesgo. Cuando se_extraigan, la lista de arriba va creciendo:
+El rescate de escudos esta completo, pero en `ServerStorage` quedan mas respaldos sueltos
+que **tampoco estan en git** y que se perderian con una limpieza:
 
-| Archivo en el lugar | FNV | Bytes | Notas |
+| Script | FNV | Bytes | Que es |
 |---|---|---|---|
-| `Respaldo_Tienda_Cajas.OilBlockVFX_original` | `3743230225` | 19140 | el aspecto del escudo en pantalla |
-| `Respaldo_Tienda_Cajas.OilCombat_original` | `1511816891` | 50433 | OilCombat con ganchos `cosmetic*` |
-| `Respaldo_Tienda_Cajas.CosmeticsShared_original` | `825101627` | 3331 | ya rescatado en el checkpoint del 2026-10-10, sin escudos |
+| `Respaldo_Tienda_Cajas.ProgressionLogic_original` | `220074352` | 12990 | logica con tiendas/cajas |
+| `Respaldo_Tienda_Cajas.ProgressionService_original` | `1575331139` | 14421 | servicio con tiendas/cajas |
+| `Respaldo_Tienda_Cajas.MainMenuClient_original` | `2341815890` | 16573 | el menu con la tienda |
+| `Respaldo_UI_Progresion.ProgressionUI_anterior.ProgressionClient` | `1474751144` | 1111 | panel de progreso v1 |
 
-`OilCombat_original` es el menos urgente: el `src/server/OilCombat.luau` vivo ya tiene el
-bloqueo completo. Del backup interesan los ganchos `cosmetic*`, no el archivo entero.
+Los tres primeros **son la otra mitad de la tienda**. Si el objetivo es montar el sistema
+completo, estos cuentan tanto como los cinco rescatados.
+
+Y sigue faltando **`StarterPlayerScripts.OilBlockVFXClient`**: el propio `OilBlockVFX`
+dice *"Lo usa StarterPlayerScripts.OilBlockVFXClient"*, y ese script no aparece en ningun
+respaldo. Sin el, los VFX rescatados no se dibujan.
+
+## 1ter. Lo que NO hay que llevar de `OilCombat_original`
+
+Este backup tiene bloques marcados `[INYECCIÓN]` que **no son codigo del diseño**, son
+parches a lo bruto. En concreto:
+
+| Bloque | Que hace | Por que no se porta tal cual |
+|---|---|---|
+| Particulas y sacudida de camara | **Crea un `LocalScript` nuevo en cada golpe**, con el codigo metido en un `Source` como cadena de texto | Un script por impacto es caro, y generar codigo en tiempo de ejecucion es mala idea aunque sea con `pcall` alrededor |
+| Lunge del empujon | `attRoot:ApplyImpulse(dir * 500)` con el **500 escrito a mano** | El resto del empuje sale de `CFG.Push`. Aqui el numero no esta en `OilConfig`, que es justo lo que la convencion del repo prohibe |
+| Bloques `[INYECCIÓN COSMÉTICOS]` | Buscan `CosmeticsEvent`, `EquippedRingOut`, `EquippedVictory` y usan `PolvoDorado` / `GiroEpico` por defecto | **Ninguno de esos existe** en `src/` ni en el lugar. Los ids tampoco coinciden con los del catalogo real (`splash_clasico`, `ave_cesar`...) |
+
+Ademas, las lineas 1587-1597 tienen un `if wroot then` mal cerrado: los dos `end` de
+dentro quedan desalineados y el segundo se lee como cierre del `if` y no del bloque.
+
+O sea: **el sistema de escudos de verdad esta en `ShieldAbilities`, `CosmeticsShared` y
+`OilBlockVFX`**. `OilCombat_original` se rescata por completitud y por historico, pero
+su parte buena (bloqueo, parry, `sameMatch`, `forceCleanup`) **ya esta mejorada en el
+`src/server/OilCombat.luau` vivo**, que es 1465 lineas y no tiene ni un `[INYECCIÓN]`.
 
 ---
 
