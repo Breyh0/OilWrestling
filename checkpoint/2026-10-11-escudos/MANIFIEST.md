@@ -15,8 +15,9 @@ leer `ShieldAbilities`.
 | Archivo | FNV | Bytes | Estado |
 |---|---|---|---|
 | `ServerStorage.Respaldo_Habilidades_Escudos/ShieldAbilities_original.luau` | `3684004711` | 9489 | **RESCATADO y verificado byte a byte** |
+| `ServerStorage.Respaldo_Habilidades_Escudos/ShieldAbilities_Test_original.luau` | `2089202569` | 5284 | **RESCATADO y verificado byte a byte** |
 
-Es el que faltaba. Todas las copias se comprueban con:
+Es lo que faltaba. Todas las copias se comprueban con:
 
 ```powershell
 python tools\verificar_rescate.py checkpoint\2026-10-11-escudos
@@ -25,16 +26,87 @@ python tools\verificar_rescate.py checkpoint\2026-10-11-escudos
 Un **hash que no coincide significa que la copia no sirve**, aunque compile y aunque se
 lea bien. Por eso la verificacion es automatica y no una mirada.
 
+### Las codificaciones estan mezcladas
+
+| Archivo | Codificacion | Como se nota |
+|---|---|---|
+| `ShieldAbilities_original` | **Latin-1** | la `i` acentuada de "Guia" es un byte `0xED` |
+| `ShieldAbilities_Test_original` | **UTF-8** | la `a` acentuada de "mas" son dos bytes `0xC3 0xA1` |
+
+Asi que **no se puede asumir nada**: hay que mirar cada archivo. Por eso la verificacion
+es por hash y no por "tiene los mismos bytes".
+
 ## 2. Que queda por rescatar
 
 Mismo origen, mismo riesgo. Cuando se_extraigan, la lista de arriba va creciendo:
 
 | Archivo en el lugar | FNV | Bytes | Notas |
 |---|---|---|---|
-| `Respaldo_Habilidades_Escudos.ShieldAbilities_Test_original` | `2089202569` | 5284 | los 4 invariantes de las habilidades |
 | `Respaldo_Tienda_Cajas.OilBlockVFX_original` | `3743230225` | 19140 | el aspecto del escudo en pantalla |
 | `Respaldo_Tienda_Cajas.OilCombat_original` | `1511816891` | 50433 | OilCombat con ganchos `cosmetic*` |
 | `Respaldo_Tienda_Cajas.CosmeticsShared_original` | `825101627` | 3331 | ya rescatado en el checkpoint del 2026-10-10, sin escudos |
+
+`OilCombat_original` es el menos urgente: el `src/server/OilCombat.luau` vivo ya tiene el
+bloqueo completo. Del backup interesan los ganchos `cosmetic*`, no el archivo entero.
+
+---
+
+## 2bis. Un valor del test esta desfasado (y se demuestra por que)
+
+El test, linea 139, espera esto:
+
+```lua
+p:SetAttribute("CosShield", "escudo_tormenta")
+expect.equal(A.ForPlayer(p).reflectBalance, 8)
+```
+
+Pero el modulo rescatado tiene **`reflectBalance = 6`** para ese escudo. **El test falla
+asi como esta.** Y no es un error de copia: con los numeros del `OilConfig` actual, 6 es
+el valor que cabe y 8 no.
+
+Calculando `A.Strength` con el balance de `src/shared/OilConfig.luau`
+(`Parry.Window = 0.22`, `Stamina.Max = 100`, `Balance.Max = 100`,
+`Balance.Damage.push = 24`, `Parry.CounterWindow = 1.6`):
+
+| Escudo | Como se calcula | Fuerza | Tope 0,40 |
+|---|---|---|---|
+| `escudo_sol` | `0.04/0.22 + 8/100` | 0,262 | correcto |
+| `escudo_laureles` | `0.08 + 20/100` | 0,280 | correcto |
+| `escudo_tormenta` | `0.07 + 6/24` | **0,320** | correcto |
+| `escudo_tormenta` *(con el 8 del test)* | `0.07 + 8/24` | **0,403** | **se pasa** |
+| `escudo_constelacion` | `0.35/1.6 + 0.10` | 0,319 | correcto |
+| `escudo_espectral` | `0.08 + 0.30` | **0,380** | correcto |
+
+Dos cosas salen de esa tabla:
+
+1. **`escudo_espectral` da exactamente 0,38**, que es lo que dice el comentario de
+   `A.List`: *"el tope es 0.40 y el mas fuerte llega a 0.38"*. El balance rescued es
+   coherente con el `OilConfig` que hay hoy, y el margen para las cajas futuras existe.
+2. **Con 8, el Downloads se iria a 0,403 y romperia el tope.** El valor se bajo de 8 a 6
+   precisamente para respetarlo, y el test no se actualizo.
+
+Al reconectar esto habra que cambiar esa linea del test a `6`. En la copia se deja tal
+cual: un rescate es una copia literal y no se arregla nada dentro de `checkpoint/`.
+
+## 3. Ids de escudo recovered
+
+De los dos archivos rescatados salen mas ids de los que creiamos:
+
+| Id | Que se sabe |
+|---|---|
+| `escudo_sol` | Resplandor · raro · con habilidad |
+| `escudo_laureles` | Laureles · raro · con habilidad |
+| `escudo_tormenta` | Descarga · raro · con habilidad |
+| `escudo_constelacion` | Guia Astral · raro · con habilidad |
+| `escudo_espectral` | Llama Fantasma · raro · con habilidad |
+| `escudo_azul` | **Azul Clasico** · el escudo base · SIN habilidad |
+| `escudo_esmeralda` | **comun** · SIN habilidad |
+
+Ademas el test delata el nombre del slot: **`Cosm.Items.shield`**, y que los escudos de
+caja se marcan con `it.boxOnly`.
+
+El "**las cinco rares**" del comentario del test cuadra con la lista: cinco raros. Las
+comunes (como `escudo_esmeralda`) y el Azul Clasico quedan fuera de `A.List` a proposito.
 
 ---
 
