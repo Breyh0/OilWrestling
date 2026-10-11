@@ -46,17 +46,6 @@ local INFO = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local mainButtons = { playBtn, shopBtn, codesBtn }
 local panels = { panel, modePanel, shopPanel, codesPanel }
 
--- ============================================================
--- CONFIGURACION DE LA TIENDA (edita esta tabla para cambiar los items)
--- ============================================================
-local SHOP_ITEMS = {
-	{ id = "oil_gold",    name = "Aceite Dorado",       price = 250,  icon = "\u{2728}",  color = Color3.fromRGB(220, 170, 50) },
-	{ id = "oil_crimson", name = "Aceite Carmes\u{00ED}", price = 250,  icon = "\u{1F525}", color = Color3.fromRGB(200, 70, 60) },
-	{ id = "oil_emerald", name = "Aceite Esmeralda",    price = 400,  icon = "\u{1F340}", color = Color3.fromRGB(70, 150, 70) },
-	{ id = "oil_night",   name = "Aceite Medianoche",   price = 400,  icon = "\u{1F319}", color = Color3.fromRGB(90, 90, 180) },
-	{ id = "muscle",      name = "Pack M\u{00FA}sculo",  price = 600,  icon = "\u{1F4AA}", color = Color3.fromRGB(200, 120, 50) },
-	{ id = "crown",       name = "Corona de Campe\u{00F3}n", price = 1000, icon = "\u{1F451}", color = Color3.fromRGB(150, 110, 200) },
-}
 
 -- ============================================================
 -- Botones: hover / click con UIScale (no mueve el layout)
@@ -97,20 +86,52 @@ local function bindButton(btn)
 end
 
 -- ============================================================
--- Tienda: tarjetas generadas desde SHOP_ITEMS
+-- Tienda: las tarjetas las PINTA lo que el servidor manda
+--
+-- Antes esta tabla vivia aqui, en el cliente, con los precios dentro. Eso era justo el
+-- fallo que marca lucha-feature: si el cliente decide el precio, el precio se puede
+-- cambiar. Ahora el catalogo viene de ProgressionService.GetCatalog(), que lo arma desde
+-- CosmeticsShared, y el boton solo manda un id.
 -- ============================================================
+local purchaseEvent = ReplicatedStorage:WaitForChild("PurchaseItem")
+local equipEvent = ReplicatedStorage:WaitForChild("EquipItem")
+local requestEvent = ReplicatedStorage:WaitForChild("RequestProgression")
+local notifyEvent = ReplicatedStorage:WaitForChild("MissionNotify")
+local updateEvent = ReplicatedStorage:WaitForChild("UpdateProgression")
+
+local RARITY_COLOR = {
+	comun = Color3.fromRGB(190, 190, 180),
+	poco_comun = Color3.fromRGB(120, 200, 120),
+	raro = Color3.fromRGB(90, 160, 255),
+	epico = Color3.fromRGB(190, 110, 255),
+	legendario = Color3.fromRGB(255, 190, 60),
+}
+
+local RANURAS = {
+	{ id = "shield", name = "Escudos", emoji = "\u{1F6E1}" },
+	{ id = "victory", name = "Victoria", emoji = "\u{1F451}" },
+	{ id = "ringout", name = "Ring-out", emoji = "\u{1F4A7}" },
+}
+
+local catalogo = {}      -- lo que manda el servidor
+local miCartera = {}     -- owned
+local miEquipado = {}    -- eq
+local ranuraAbierta = "shield"
+local filtroTabla = "todos"
+
 local toast = Instance.new("TextLabel")
 toast.Name = "Toast"
 toast.AnchorPoint = Vector2.new(0.5, 1)
 toast.Position = UDim2.new(0.5, 0, 1, -16)
-toast.Size = UDim2.fromOffset(280, 34)
+toast.Size = UDim2.fromOffset(300, 34)
 toast.BackgroundColor3 = Color3.new(0, 0, 0)
 toast.BackgroundTransparency = 1
 toast.TextTransparency = 1
 toast.Font = Enum.Font.GothamBold
 toast.TextSize = 14
 toast.Text = ""
-toast.ZIndex = 20
+toast.ZIndex = 30
+toast.TextWrapped = true
 toast.Parent = shopPanel
 do
 	local c = Instance.new("UICorner")
@@ -126,7 +147,7 @@ local function showToast(text, color)
 	toast.TextColor3 = color
 	toast.BackgroundTransparency = 0.25
 	toast.TextTransparency = 0
-	task.delay(2, function()
+	task.delay(2.4, function()
 		if toastToken ~= my then return end
 		TweenService:Create(toast, TweenInfo.new(0.4), { BackgroundTransparency = 1, TextTransparency = 1 }):Play()
 	end)
@@ -141,66 +162,180 @@ local function newLabel(parent, props)
 	return l
 end
 
-for i, item in ipairs(SHOP_ITEMS) do
-	local card = Instance.new("Frame")
-	card.Name = item.id
-	card.LayoutOrder = i
-	card.BackgroundColor3 = Color3.fromRGB(38, 46, 32)
-	card.BorderSizePixel = 0
-	card.ZIndex = 11
-	card.Parent = shopItems
+local function newButton(parent, props)
+	local b = Instance.new("TextButton")
+	b.BorderSizePixel = 0
+	b.ZIndex = 12
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 13
+	b.TextColor3 = Color3.new(1, 1, 1)
+	for k, v in pairs(props) do b[k] = v end
+	b.Parent = parent
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 10)
+	c.Parent = b
+	return b
+end
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 14)
-	corner.Parent = card
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = item.color
-	stroke.Thickness = 1.5
-	stroke.Transparency = 0.6
-	stroke.Parent = card
+-- Barra de ranuras: los escudos son lo primero porque es lo que se ha pedido
+local tabs = Instance.new("Frame")
+tabs.Name = "Tabs"
+tabs.BackgroundTransparency = 1
+tabs.Size = UDim2.new(1, -16, 0, 30)
+tabs.Position = UDim2.new(0, 8, 0, 4)
+tabs.ZIndex = 12
+tabs.Parent = shopItems
+do
+	local l = Instance.new("UIListLayout")
+	l.FillDirection = Enum.FillDirection.Horizontal
+	l.HorizontalAlignment = Enum.HorizontalAlignment.Left
+	l.SortOrder = Enum.SortOrder.LayoutOrder
+	l.Padding = UDim.new(0, 6)
+	l.Parent = tabs
+end
 
-	newLabel(card, { Name = "Icon", Position = UDim2.new(0, 0, 0, 12), Size = UDim2.new(1, 0, 0, 56),
-		Font = Enum.Font.GothamBold, TextSize = 44, TextColor3 = Color3.new(1, 1, 1), Text = item.icon })
-	newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 22),
-		Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = Color3.new(1, 1, 1), Text = item.name, TextTruncate = Enum.TextTruncate.AtEnd })
-	newLabel(card, { Name = "Price", Position = UDim2.new(0, 0, 0, 98), Size = UDim2.new(1, 0, 0, 20),
-		Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = GOLD, Text = "\u{1F4B0} " .. item.price })
-
-	local buy = Instance.new("TextButton")
-	buy.Name = "BuyBtn"
-	buy.AnchorPoint = Vector2.new(0.5, 1)
-	buy.Position = UDim2.new(0.5, 0, 1, -12)
-	buy.Size = UDim2.new(1, -24, 0, 34)
-	buy.BackgroundColor3 = item.color
-	buy.BorderSizePixel = 0
-	buy.ZIndex = 12
-	buy.Font = Enum.Font.GothamBold
-	buy.TextSize = 14
-	buy.TextColor3 = Color3.new(1, 1, 1)
-	buy.Text = "COMPRAR"
-	buy.Parent = card
-	local bc = Instance.new("UICorner")
-	bc.CornerRadius = UDim.new(0, 10)
-	bc.Parent = buy
-	local bs = Instance.new("UIStroke")
-	bs.Name = "Stroke"
-	bs.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	bs.Color = Color3.new(1, 1, 1)
-	bs.Thickness = 1.5
-	bs.Transparency = 0.7
-	bs.Parent = buy
-
-	bindButton(buy)
-	buy.MouseButton1Click:Connect(function()
-		local remote = ReplicatedStorage:FindFirstChild("PurchaseItem")
-		if remote and remote:IsA("RemoteEvent") then
-			remote:FireServer(item.id)
-			showToast("Solicitud enviada: " .. item.name, OK_COLOR)
-		else
-			showToast("Pr\u{00F3}ximamente", GOLD)
+local function filtrar()
+	local lista = {}
+	for _, it in ipairs(catalogo) do
+		if it.slot == ranuraAbierta and (filtroTabla == "todos" or it.rarity == filtroTabla) then
+			lista[#lista+1] = it
 		end
+	end
+	return lista
+end
+
+local function pintar()
+	for _, h in ipairs(shopItems:GetChildren()) do
+		if h:IsA("Frame") then h:Destroy() end
+	end
+
+	local lista = filtrar()
+	-- primero los que ya tienes, para no tener que buscarlos
+	table.sort(lista, function(a, b)
+		local fa, fb = miCartera[a.id] and 0 or 1, miCartera[b.id] and 0 or 1
+		if fa ~= fb then return fa < fb end
+		if a.price ~= b.price then return a.price < b.price end
+		return a.id < b.id
+	end)
+
+	if #lista == 0 then
+		newLabel(shopItems, {
+			Name = "Vacio", Position = UDim2.new(0, 8, 0, 44), Size = UDim2.new(1, -16, 0, 30),
+			Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = Color3.fromRGB(160, 170, 150),
+			Text = "No hay nada en esta ranura todavia.", TextWrapped = true,
+		})
+		return
+	end
+
+	for i, item in ipairs(lista) do
+		local tinte = RARITY_COLOR[item.rarity] or RARITY_COLOR.comun
+		local mio = miCartera[item.id] == true
+		local puesto = miEquipado[item.slot] == item.id
+
+		local card = Instance.new("Frame")
+		card.Name = item.id
+		card.LayoutOrder = i
+		card.BackgroundColor3 = Color3.fromRGB(38, 46, 32)
+		card.BorderSizePixel = 0
+		card.ZIndex = 11
+		card.Size = UDim2.new(1, -8, 0, 168)
+		card.Parent = shopItems
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 14)
+		corner.Parent = card
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = tinte
+		stroke.Thickness = puesto and 3 or 1.5
+		stroke.Transparency = 0.5
+		stroke.Parent = card
+
+		-- el icono: el color del escudo si lo tiene, la rareza si no
+		local iconColor = item.color or tinte
+		newLabel(card, { Name = "Icon", Position = UDim2.new(0, 0, 0, 10), Size = UDim2.new(1, 0, 0, 46),
+			Font = Enum.Font.GothamBold, TextSize = 38,
+			TextColor3 = puesto and iconColor or Color3.fromRGB(150, 155, 145),
+			Text = item.slot == "shield" and "\u{1F6E1}" or (item.slot == "victory" and "\u{1F451}" or "\u{1F4A7}") })
+
+		newLabel(card, { Name = "Name", Position = UDim2.new(0, 8, 0, 56), Size = UDim2.new(1, -16, 0, 20),
+			Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = Color3.new(1, 1, 1),
+			Text = item.name, TextTruncate = Enum.TextTruncate.AtEnd })
+
+		newLabel(card, { Name = "Raridad", Position = UDim2.new(0, 8, 0, 74), Size = UDim2.new(1, -16, 0, 16),
+			Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = tinte,
+			Text = (item.rarity or "comun"):gsub("^%l", string.upper) })
+
+		-- La habilidad, si la tiene. El texto lo genera ShieldAbilities desde los numeros.
+		newLabel(card, { Name = "Hab", Position = UDim2.new(0, 8, 0, 90), Size = UDim2.new(1, -16, 0, 30),
+			Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = Color3.fromRGB(190, 200, 175),
+			Text = item.abilityText or item.desc or "", TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top })
+
+		-- precio o estado
+		newLabel(card, { Name = "Precio", Position = UDim2.new(0, 8, 1, -46), Size = UDim2.new(1, -16, 0, 18),
+			Font = Enum.Font.GothamBold, TextSize = 13,
+			TextColor3 = mio and OK_COLOR or GOLD,
+			Text = puesto and "EN USO" or (mio and "EN CARTERA" or ("\u{1F4B0} " .. item.price)) })
+
+		local boton
+		if puesto then
+			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 30),
+				BackgroundColor3 = Color3.fromRGB(60, 70, 55), Text = "PUESTO", AutoButtonColor = false })
+		elseif mio then
+			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 30),
+				BackgroundColor3 = tinte, Text = "EQUIPAR" })
+		else
+			boton = newButton(card, { Name = "Btn", AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.new(0.5, 0, 1, -10), Size = UDim2.new(1, -24, 0, 30),
+				BackgroundColor3 = Color3.fromRGB(200, 165, 60), Text = "COMPRAR" })
+		end
+
+		bindButton(boton)
+		boton.MouseButton1Click:Connect(function()
+			if puesto then return end
+			if mio then
+				equipEvent:FireServer(item.id)
+			else
+				purchaseEvent:FireServer(item.id)
+			end
+			showToast("Enviado: " .. item.name, GOLD)
+		end)
+	end
+end
+
+for i, r in ipairs(RANURAS) do
+	local b = newButton(tabs, { Name = r.id, LayoutOrder = i,
+		Size = UDim2.new(0, 110, 1, 0), BackgroundColor3 = Color3.fromRGB(45, 55, 40),
+		Text = r.emoji .. "  " .. r.name })
+	bindButton(b)
+	b.MouseButton1Click:Connect(function()
+		ranuraAbierta = r.id
+		filtroTabla = "todos"
+		pintar()
 	end)
 end
+
+-- Escuchar al servidor: el catalogo, la cartera y el resultado de comprar/equipar
+notifyEvent.OnClientEvent:Connect(function(kind, data)
+	if kind == "catalog" and type(data) == "table" and data.items then
+		catalogo = data.items
+		pintar()
+	elseif kind == "shop" and type(data) == "table" then
+		showToast(data.text or "", data.ok and OK_COLOR or ERR_COLOR)
+	end
+end)
+
+updateEvent.OnClientEvent:Connect(function(d)
+	if type(d) == "table" and type(d.cosm) == "table" then
+		miCartera = d.cosm.owned or {}
+		miEquipado = d.cosm.eq or {}
+		pintar()
+	end
+end)
+
+requestEvent:FireServer(true) -- pide estado y catalogo de una vez
+
 
 -- ============================================================
 -- Codigos

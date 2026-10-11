@@ -17,10 +17,13 @@
 
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = require(ReplicatedStorage:WaitForChild("ProgressionShared"))
 local Logic = require(script.Parent:WaitForChild("ProgressionLogic"))
+local Cosm = require(ReplicatedStorage:WaitForChild("CosmeticsShared"))
+local ShieldAbilities = require(ReplicatedStorage:WaitForChild("ShieldAbilities"))
 
 local CONFIG = {
 	DataStoreName = "Progression_v1", -- mismo almacen de siempre: el progreso existente se conserva
@@ -65,6 +68,25 @@ local function buildSnapshot(s)
 	local snap = Logic.Snapshot(s.data)
 	snap.unsaved = s.unsaved or nil
 	return snap
+end
+
+-- Los cosmeticos equipados viajan en atributos del jugador (los leen ShieldAbilities en el
+-- servidor y se replican a los clientes) y en el PERSONAJE, que es donde los lee
+-- OilBlockVFXClient para pintar el escudo del color que toca. Siempre hay un valor valido:
+-- el predeterminado de su ranura.
+local function applyCosmeticAttributes(player, s)
+	local eq = (s.data.cosm and s.data.cosm.eq) or {}
+	local function poner(atributo, ranura, porDefecto)
+		local valor = eq[ranura] or porDefecto
+		player:SetAttribute(atributo, valor)
+		local char = player.Character
+		if char then
+			char:SetAttribute(atributo, valor)
+		end
+	end
+	poner("CosVictory", "victory", Cosm.Defaults.victory)
+	poner("CosRingout", "ringout", Cosm.Defaults.ringout)
+	poner("CosShield", "shield", Cosm.Defaults.shield)
 end
 
 local function refreshLeaderstats(player, s)
@@ -346,6 +368,148 @@ function Service.GetData(player)
 end
 
 -- ============================================================
+-- Cosmeticos: propiedad, compra y equipado
+-- Capa 4 de la tienda. AQUI es donde se decide: el cliente solo manda un id.
+-- ============================================================
+local purchaseEvent = ensureRemote("PurchaseItem")  -- cliente -> server: quiere comprar un id
+local equipEvent = ensureRemote("EquipItem")        -- cliente -> server: quiere equipar un id
+
+-- Solo se transacciona con datos cargados. En Studio, que no tiene DataStore, tambien
+-- se permite sobre una sesion sin cargar para poder probar sin guardado.
+local function canTransact(s)
+	return s ~= nil and (s.loaded or (s.unsaved and RunService:IsStudio()))
+end
+
+local function afterCosmeticChange(player, s)
+	s.dirty = true
+	applyCosmeticAttributes(player, s)
+	push(player)
+	queueSave(player)
+end
+
+function Service.GetCosmetics(player)
+	local s = sessions[player]
+	if not s then
+		return nil
+	end
+	return Logic.DeepCopy(s.data.cosm)
+end
+
+-- El catalogo que se manda al cliente para pintar la tienda. Se arma en el SERVIDOR a
+-- partir de CosmeticsShared: el cliente no tiene ni la lista ni los precios.
+function Service.GetCatalog()
+	local lista = {}
+	for _, slot in ipairs(Cosm.Slots) do
+		for _, it in ipairs(Cosm.Items[slot]) do
+			lista[#lista+1] = {
+				id = it.id,
+				slot = it.slot or slot,
+				name = it.name,
+				price = it.price,
+				rarity = it.rarity,
+				desc = it.desc,
+				descBox = it.dur,
+				-- el aspecto lo lee el cliente para el color y la rareza
+				color = (Cosm.ShieldSkin(it.id) or {}).color,
+				hasAbility = ShieldAbilities.Get(it.id) ~= nil,
+				abilityText = ShieldAbilities.Describe(it.id),
+			}
+		end
+	end
+	return lista
+end
+
+-- Regala un cosmetico (devuelve true si era nuevo)
+function Service.GrantCosmetic(player, id)
+	local s = sessions[player]
+	if not canTransact(s) then
+		return false
+	end
+	local isNew = Logic.GrantCosmetic(s.data, id)
+	if isNew then
+		afterCosmeticChange(player, s)
+	end
+	return isNew
+end
+
+-- Compra con monedas. Devuelve (ok, motivo): "ok" | "unknown" | "owned" | "coins" | "not_ready"
+function Service.PurchaseCosmetic(player, id)
+	local s = sessions[player]
+	if not canTransact(s) then
+		return false, "not_ready"
+	end
+	-- El precio lo pone Logic leyendo el catalogo. El cliente NO puede mandarlo.
+	local ok, reason = Logic.BuyCosmetic(s.data, id)
+	if ok then
+		afterCosmeticChange(player, s)
+	end
+	return ok, reason
+end
+
+-- Equipa un cosmetico que ya posees. Devuelve (ok, motivo): "ok" | "unknown" | "not_owned" | "not_ready"
+function Service.EquipCosmetic(player, id)
+	local s = sessions[player]
+	if not canTransact(s) then
+		return false, "not_ready"
+	end
+	local ok, reason = Logic.EquipCosmetic(s.data, id)
+	if ok then
+		afterCosmeticChange(player, s)
+	end
+	return ok, reason
+end
+
+-- Anti-abuso: 0.4 s entre pulsaciones del mismo jugador en el mismo remoto. Es dedupe de
+-- red, nunca corta un pulso humano (el boton se puede spamear sin consecuencias raras).
+local throttle = setmetatable({}, { __mode = "k" }) -- [player] = { [accion] = reloj }
+local MIN_GAP = 0.4
+local function pasarFiltro(player, accion)
+	local ahora = os.clock()
+	local marcas = throttle[player]
+	if marcas and marcas[accion] and ahora - marcas[accion] < MIN_GAP then
+		return false
+	end
+	marcas = marcas or {}
+	marcas[accion] = ahora
+	throttle[player] = marcas
+	return true
+end
+
+local MOTIVOS = {
+	ok = "Comprado", unknown = "Ese objeto no existe", owned = "Ya lo tienes",
+	coins = "No te llegan las monedas", not_owned = "No lo tienes todavia",
+	not_ready = "Tu progreso aun no ha cargado",
+}
+
+purchaseEvent.OnServerEvent:Connect(function(player, id)
+	-- whitelist: solo cadenas que existen en el catalogo. Cualquier otra cosa se ignora aqui.
+	if type(id) ~= "string" or not Cosm.Get(id) then
+		return
+	end
+	if not pasarFiltro(player, "purchase") then
+		return
+	end
+	local ok, motivo = Service.PurchaseCosmetic(player, id)
+	if not ok then
+		notify(player, "shop", { ok = false, id = id, motivo = motivo, text = MOTIVOS[motivo] or "No se pudo comprar" })
+		return
+	end
+	notify(player, "shop", { ok = true, id = id, text = MOTIVOS.ok })
+end)
+
+equipEvent.OnServerEvent:Connect(function(player, id)
+	if type(id) ~= "string" or not Cosm.Get(id) then
+		return
+	end
+	if not pasarFiltro(player, "equip") then
+		return
+	end
+	local ok, motivo = Service.EquipCosmetic(player, id)
+	notify(player, "shop", { ok = ok, id = id, equipped = ok,
+		text = ok and "Equipado" or (MOTIVOS[motivo] or "No se pudo equipar") })
+end)
+
+-- ============================================================
 -- Ciclo de vida de los jugadores
 -- ============================================================
 local function onPlayerAdded(player)
@@ -376,15 +540,20 @@ for _, p in ipairs(Players:GetPlayers()) do
 	task.spawn(onPlayerAdded, p)
 end
 
--- El cliente pide su estado al arrancar (evita perder el primer envio)
+-- El cliente pide su estado al arrancar (evita perder el primer envio). La misma llamada
+-- sirve para pedir el catalogo de la tienda: asi hay UN solo remoto de este tipo y un solo
+-- rate-limit, en vez de dos conexiones al mismo evento.
 local lastRequest = setmetatable({}, { __mode = "k" })
-requestEvent.OnServerEvent:Connect(function(player)
+requestEvent.OnServerEvent:Connect(function(player, pideCatalogo)
 	local t = os.clock()
 	if lastRequest[player] and t - lastRequest[player] < 1 then
 		return
 	end
 	lastRequest[player] = t
 	push(player)
+	if pideCatalogo then
+		notify(player, "catalog", { items = Service.GetCatalog() })
+	end
 end)
 
 -- Autoguardado
