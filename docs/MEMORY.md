@@ -342,12 +342,26 @@ precio se puede cambiar.
 ### Menos grave
 
 - La barra de pestañas cuelga del PANEL, no de la lista. Colgada de la lista, `pintar()`
-  se la come en el primer repintado.
+  se la come en el primer repintado. **Al final se quitaron** (ver "Leccion de diseno").
 - `applyCosmeticAttributes` tiene que llamarse en `loadPlayer` **y** en cada
   `CharacterAdded`. Llamarla solo al equipar deja al jugador sin escudo al entrar y
   despues de morir: el personaje nuevo es otra instancia y no hereda atributos.
 - `buildCatalog` es una funcion local, no `Service.GetCatalog`: `loadPlayer` la usa y esta
   declarado antes que `Service`. La regla `adelantada` del preflight lo para.
+
+### Leccion de diseno (2026-10-11): el diseno original esta en el rescate
+
+**Me invente un diseno de tarjetas entero y no era el del proyecto.** El original estaba
+a mano, en `checkpoint/2026-10-11-escudos/.../MainMenuClient_original.luau`, con medidas
+ literales. Cuando se toca una GUI que ya existia, **el diseno se rescata, no se
+reimprovisa**. El Catalogo de donde salia cada cosa se lee ahi.
+
+Original: tarjeta de **160 px**, icono **centrado** de 44 px, nombre en GothamBold 15,
+precio GothamBold 14 en dorado, boton de 34 px **con borde blanco** (`UIStroke` de nombre
+`"Stroke"`, modo `Border`), textos **centrados**, una sola lista plana sin pestañas.
+
+Lo que si se decidio anadir: la **linea de que hace el escudo** (y por eso 210 px). Lo
+que se decidio quitar: las **pestanas** por ranura.
 
 ## TODO / Known issues
 
