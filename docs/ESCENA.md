@@ -71,19 +71,25 @@ también está desactualizado en ese dato.
 Se comprobó que **no rompe nada**: `OilPhysics` y `OilCombat` leen el ring dinámicamente
 (`ring:FindFirstChild("OilArena")`), no hay coordenadas escritas a mano, y existe un
 `SpawnLocation` real (`BroadcastBooth.BoothSpawn2`), así que el fallback de
-`MatchLoop.getLobbyCFrame()` no se usa. Aun así, cualquier cambio de posición del ring
-tiene que acabar en el diff del manifiesto.
+`MatchLoop.getLobbyCFrame()` no se usa. **Decisión del usuario: dejarlo como está.**
 
-**2. Tres `Part` sueltos flotando a ~3.000 studs** de altura, anclados y con colisión.
-No rompen el juego (nadie llega ahí), pero son basura de alguna prueba. **No se borran sin
-preguntar**: pueden ser del compañero. Aparecen en la sección "Objetos sueltos" del
-manifiesto para que no se pierdan de vista.
+**2. Tres `Part` sueltos flotando a ~3.000 studs**, anclados y con colisión, con el nombre
+por defecto y sin hijos. Se comprobó que **ningún script los referenciaba** (las
+apariciones de `"Part"` en el código son todas `Instance.new("Part")`, que *crean* partes
+nuevas) y que nadie puede pisarlos. **Borrados** con el visto bueno del usuario
+(5106 → 5103 objetos).
 
 ## La sección "Objetos sueltos en la raíz"
 
-El generador lista lo que no es `Folder`, ni `Model`, ni `Baseplate`, ni `Terrain`, ni un
-`SpawnLocation`. No es una lista de basura: es una lista de **preguntas**. Si no sabes qué
-es algo, preguntas antes de borrarlo.
+El generador lista lo que, en la raíz del Workspace, **conserva el nombre por defecto**
+(`Part`, `Block`, `Wedge`…: nadie lo nombro, así que nadie lo reclama) o **está a más de
+200 studs de altura** (nadie lo pisa). Antes señalaba cualquier `Part` suelta y por eso
+aparecía `MuroPodio`, que es escena legítima: una pared de mármol de 9×5×2 a nivel del
+suelo junto al podio. Marcar como basura algo que no lo es **enseña a ignorar la lista**,
+que es peor que no tenerla.
+
+No es una lista de basura: es una lista de **preguntas**. Si no sabes qué es algo,
+preguntas antes de borrarlo.
 
 ## Lo que este mecanismo no cubre
 

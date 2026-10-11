@@ -140,7 +140,7 @@ suba por error.
   publicar, la escena no existe.
 - **Para detectarla**: `escena/inventario.luau` genera `escena/MANIFIEST-ESCENA.md`, que sí
   está en git. `python tools\verificar_escena.py` comprueba que nadie lo editó a mano.
-- Huella del estado del 2026-10-10: `3399760856`.
+- Huella del estado del 2026-10-10: `3218896102`.
 
 Hallazgos del primer inventario, que nadie tenía registrados:
 
@@ -148,9 +148,11 @@ Hallazgos del primer inventario, que nadie tenía registrados:
   con él `GoldFrame`, `MarbleTier` y `PedestalBase`. **No rompe el juego**: `OilPhysics` y
   `OilCombat` leen el ring dinámicamente y hay un `SpawnLocation` real
   (`BroadcastBooth.BoothSpawn2`), así que el fallback de `getLobbyCFrame()` no se usa.
-  Pero el `checkpoint/` del 10 de octubre está desactualizado en ese dato.
-- **3 `Part` sueltos flotando a ~3000 studs**, anclados y con colisión. No rompen nada pero
-  son basura de alguna prueba. **No borrar sin preguntar**: pueden ser del compañero.
+  **Decidido: dejarlo como está.** El `checkpoint/` del 10 de octubre está desactualizado
+  en ese dato.
+- **3 `Part` sueltos a ~3000 studs**, con nombre por defecto, sin hijos y sin referencias
+  desde ningún script (las 7 apariciones de `"Part"` en el código son `Instance.new`).
+  **Borrados** con visto bueno del usuario. Workspace: 5106 → 5103 objetos.
 
 ## Sistema de sonido (2026-10-10, `src/client/SoundDirector.client.luau`)
 

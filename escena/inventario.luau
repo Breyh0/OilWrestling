@@ -222,19 +222,31 @@ if ft then
 end
 
 -- ---------------------------------------------------------------- Sospechosos
+-- Objetos sueltos en la raiz que (a) conservan el nombre por defecto (nadie los nombro:
+-- son restos de pruebas) o (b) estan tan lejos del juego que nadie los pisa.
+-- NO se avisa de una Part con nombre propio a nivel de suelo: MuroPodio y compañía son
+-- escena de verdad, y marcarlos como sospechosos es ruido que habitua a ignorar la lista.
+local NOMBRES_POR_DEFECTO = {
+	Part = true,
+	Block = true,
+	Wedge = true,
+	MeshPart = true,
+	SpawnLocation = true,
+}
 local sospechosos = {}
 for _, c in ipairs(ordenados(workspace)) do
-	local conocido = c:IsA("Folder") or c:IsA("Model") or c.Name == "Baseplate"
-		or c.Name == "Terrain" or c:IsA("SpawnLocation") or c:IsA("Camera")
-	if not conocido then
+	local estructura = c:IsA("Folder") or c:IsA("Model") or c.Name == "Baseplate" or c.Name == "Terrain"
+	local por_defecto = NOMBRES_POR_DEFECTO[c.Name] and c:IsA("BasePart")
+	local lejos = c:IsA("BasePart") and c.Position.Y > 200
+	if not estructura and (por_defecto or lejos) then
 		sospechosos[#sospechosos + 1] = string.format("  %s (%s) en %s", c.Name, c.ClassName, tostring(c.Position))
 	end
 end
 if #sospechosos > 0 then
 	add("## Objetos sueltos en la raíz (revisar)")
 	add("")
-	add("No son Folder ni Model, y no son Baseplate ni Terrain. Si no sabes qué son,")
-	add("pregunta antes de borrarlos: pueden ser de alguien.")
+	add("Conservan el nombre por defecto o están tan lejos que nadie los pisa. Si no sabes")
+	add("qué son, pregunta antes de borrarlos: pueden ser de alguien.")
 	add("")
 	for _, s in ipairs(sospechosos) do
 		add(s)

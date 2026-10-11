@@ -3,7 +3,7 @@
 Generado con `escena/inventario.luau`. **La escena no esta en git**: esto la vigila,
 no la respalda. Para restaurar de verdad hay que publicar el place.
 
-Huella: `3399760856`
+Huella: `3218896102`
 
 La huella es el FNV-1a de 32 de este mismo documento con la linea de la huella
 sustituida por `(se calcula al final)`. Se puede comprobar en cualquier momento:
@@ -25,13 +25,10 @@ python -c "d=open('escena/MANIFIEST-ESCENA.md','rb').read(); h=2166136261; [None
 | ColosseumStructure | Folder | 2311 |  |
 | MuroPodio | Part | 1 |  |
 | OilWrestlingRing | Model | 774 | 737 partes, 0 Humanoid, 0 Animation |
-| Part | Part | 1 |  |
-| Part | Part | 1 |  |
-| Part | Part | 1 |  |
 | StadiumEnclosure | Model | 13 | 11 partes, 0 Humanoid, 0 Animation |
 | Terrain | Terrain | 1 |  |
 
-**Total en Workspace: 5106 objetos**
+**Total en Workspace: 5103 objetos**
 
 ## OilWrestlingRing
 
@@ -99,7 +96,7 @@ python -c "d=open('escena/MANIFIEST-ESCENA.md','rb').read(); h=2166136261; [None
 
 ## FighterTemplate (hitbox)
 
-| Parte | Tamano | Colision |Contacto |
+| Parte | Tamano | Colision | Contacto |
 |---|---|---|---|
 | Head | 2.0 x 1.0 x 1.0 | true | true |
 | HumanoidRootPart | 2.0 x 2.0 x 1.0 | false | true |
@@ -108,13 +105,3 @@ python -c "d=open('escena/MANIFIEST-ESCENA.md','rb').read(); h=2166136261; [None
 | Right Arm | 1.0 x 2.0 x 1.0 | true | true |
 | Right Leg | 1.0 x 2.0 x 1.0 | true | true |
 | Torso | 2.0 x 2.0 x 1.0 | true | true |
-
-## Objetos sueltos en la raiz (revisar)
-
-No son Folder ni Model, y no son Baseplate ni Terrain. Si no sabes que son, pregunta
-antes de borrarlos: pueden ser de alguien.
-
-- `MuroPodio` (Part) en 90.74998474121094, 2.5, 13.427921295166016
-- `Part` (Part) en 0, 3000, 0
-- `Part` (Part) en 0, 2996.5, 0
-- `Part` (Part) en 0, 3000.5, 0
