@@ -275,9 +275,30 @@ def rev_alfabeto(lineas):
     return fallos
 
 
+def leer(path):
+    """Lee un archivo tolerando las dos codificaciones que hay en el repo.
+
+    Devuelve (texto, codificacion). Los scripts rescatados del lugar el 2026-10-11
+    estan en Latin-1, no en UTF-8: Studio los guardo asi y el acento "i" ocupa un
+    byte (0xED) en vez de dos. Abrirlos como UTF-8 reventaba con UnicodeDecodeError
+    y tumbaba el preflight entero, losing el control de todos los demas archivos.
+
+    Fallar entero por un archivo raro es el peor resultado posible: es preferible
+    avisar y seguir.
+    """
+    with open(path, "rb") as fh:
+        datos = fh.read()
+    if datos.startswith(b"\xef\xbb\xbf"):
+        datos = datos[3:]
+    try:
+        return datos.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        return datos.decode("latin-1"), "latin-1"
+
+
 def comprobar(path):
-    with open(path, encoding="utf-8-sig") as fh:
-        lineas = fh.read().split("\n")
+    texto, codificacion = leer(path)
+    lineas = texto.split("\n")
     masc, quote = mask(lineas)
     problemas = []
     if quote:
@@ -296,7 +317,7 @@ def comprobar(path):
                 problemas.append((num, "[%s] %s" % (etiqueta, msg), ln.strip()[:88]))
     for num, msg, ln in rev_alfabeto(lineas):
         problemas.append((num, "[alfabeto] %s" % msg, ln.strip()[:88]))
-    return problemas, len(lineas)
+    return problemas, len(lineas), codificacion
 
 
 def main():
@@ -323,16 +344,20 @@ def main():
 
     total = 0
     for path in sorted(objetivos):
-        problemas, nlineas = comprobar(path)
+        problemas, nlineas, codificacion = comprobar(path)
+        # La codificacion no es un fallo: los respaldos rescatados del lugar estan en
+        # Latin-1 y siguen siendo validos. Se avisa para que nadie los reescriba sin
+        # querer y cambie sus bytes, pero no rompe la puerta.
+        marca = " [Latin-1]" if codificacion == "latin-1" else ""
         if problemas:
-            print("FALLA  %s  (%d lineas)" % (path, nlineas))
+            print("FALLA  %s  (%d lineas)%s" % (path, nlineas, marca))
             for num, msg, ln in problemas:
                 print("   L%-4d %s" % (num, msg))
                 if ln:
                     print("          %s" % ln)
             total += len(problemas)
         else:
-            print("OK     %s  (%d lineas)" % (path, nlineas))
+            print("OK     %s  (%d lineas)%s" % (path, nlineas, marca))
     print()
     print("archivos: %d | problemas: %d" % (len(objetivos), total))
     sys.exit(1 if total else 0)

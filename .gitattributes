@@ -6,3 +6,9 @@
 *.rbxlx text
 *.png binary
 *.jpg binary
+
+# Las copias de rescate de checkpoint/ son bytes literales de lo que hay en el lugar:
+# su hash FNV es lo que prueba que el rescate es fiel. Si git normalizara los finales
+# de linea o la codificacion, el hash dejaria de coincidir sin que se note. Aqui no se
+# toca ni un byte.
+checkpoint/** -text
