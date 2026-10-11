@@ -1,6 +1,6 @@
 # Memoria del proyecto — Lucha de aceite
 
-> Última actualización: 2026-10-07 (noche: bugs #1 y #2 de `docs/OILCOMBAT.md` arreglados — `runMatch` con `pcall`+`forceCleanup` y `doCharge` sin busy-wait, ambos verificados en playtest; 2 skills del repo + 46 tests de `ProgressionLogic` + `Reconcile` clampea `stats` como xp/coins; antes: suelo aceitoso + resbalón + salpicaduras + fix de GUI con `WaitForChild` con timeout). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
+> Última actualización: **2026-10-11** (presupuesto de rendimiento: medido de verdad en playtest, con ruido de medición cuantificado — ver `docs/RENDIMIENTO.md` y `tools/medir_fps.luau`. sistema de sonido mergeado a `main`, método de equipo completo, `docs/LECCIONES.md` con los fallos de la IA, bug #1 y #2 de `docs/OILCOMBAT.md` arreglados, 46 tests de `ProgressionLogic`). Reemplaza al antiguo `ServerStorage.ZeroScript.Memory` (ya eliminado — este archivo es la fuente de verdad). **Leer antes de tocar nada.**
 
 ## Overview
 
@@ -241,6 +241,31 @@ Las IAs de los dos compañeros cargan estas skills automáticamente desde el rep
 **Grafo de conocimiento** (graphify, `graphify-out/` va en `.gitignore`): 318 nodos / 621 aristas / 38 comunidades. Preguntas de arquitectura ("qué llama a OilCombat.perform", "qué toca el suelo aceitoso") → responder con `graphify query "..."` en vez de releer 1400 líneas. `OILCOMBAT.md` es el puente documental→código (3 de sus 6 aristas cruzan de comunidad).
 
 ## TODO / Known issues
+
+### Rendimiento: MEDIDO el 2026-10-11 (cerrado, con resultados)
+
+Detalle completo en **`docs/RENDIMIENTO.md`**. Resumen para no releer todo:
+
+- Lobby **21,6 ms** (46 fps) · durante un combate **22,2 ms** (45 fps). Pelear cuesta
+  **0,5 ms** más que esperar: el peso es la escena, no el combate.
+- **Ruido de la medición: 0,72 ms (3 %)** con cinco pasadas idénticas. Cualquier efecto
+  menor que eso no es un hallazgo. Por eso existe `tools/medir_fps.luau`, que exige
+  superar el ruido de las dos mediciones sumadas antes de afirmar nada.
+- **Nada en la escena es un cuello de botella demostrable.** Apagar sombras (0,79 ms) y
+  las 54 luces (0,44 ms) queda dentro del ruido combinado (2,61 ms). Poner el coliseo o
+  el público a `Transparency = 1` **empeora** el frame time, porque los objetos
+  transparentes se siguen dibujando: no es una forma de apagar nada.
+- `StreamingEnabled` ya está en `true`. Luces: 54, solo 1 con sombras.
+- Presupuesto con números en `RENDIMIENTO.md`. Thresholds de aviso puestos por encima de
+  los ~21,9 ms de Studio a propósito, porque Studio no es la referencia.
+
+**Sin medir todavía:** móvil (nada, y es lo que manda), memoria (`Stats.MemoryTotalMb`
+no está expuesto en este entorno), cliente publicado, servidor con carga, y el coste de
+la GUI (417 objetos, uno de 257 en `MainMenu`).
+
+**Regla nueva:** antes y después de cualquier cambio que afecte al render, medir con
+`medir_fps.luau` (4 repeticiones mínimo) y escribir el número en `CHANGELOG.md` solo si
+`Comparar` dice DIFERENCIA REAL.
 
 
 - [x] ~~`OilAction` sin rate-limit ni validación de `aim`~~ → **blindado 2026-10-06** (ver sección Blindaje).
